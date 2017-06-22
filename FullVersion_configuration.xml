@@ -1,0 +1,1231 @@
+<?xml version="1.0"?>
+<project name="FullVersion_configuration" default="all" basedir=".">
+
+        <!-- ******************************** -->
+        <!--    Import declaration section    -->
+        <!-- ******************************** -->
+              <import file="validation.xml"/>
+              <import file="coreutils.xml"/>
+              <import file="multistack-configuration.xml"/>
+        <!-- ********************************* -->
+        <!--    Import declaration section ends-->
+        <!-- ********************************* -->
+
+        <!-- ******************************** -->
+        <!--    Property declaration section  -->
+        <!-- ******************************** -->
+              <property environment="env"/>
+              <property file="${env.DELIVERABLES_HOME}/crestel-installation.info"/>
+              <property file="${env.CRESTELINSTALLER_HOME}/config/database-env.info"/>
+              <property file="${installer.config.dir}/fullversion-configuration.info"/>
+        <!-- ********************************* -->
+        <!-- Property declaration section ends -->
+        <!-- ********************************* -->
+
+	<!-- ******************************** -->
+        <!--    Path declaration section      -->
+        <!-- ******************************** -->
+
+        <!-- ******************************** -->
+        <!--    Path declaration section ends -->
+        <!-- ******************************** -->
+
+        <!-- ******************************** -->
+        <!--  Taskdef declaration section     -->
+        <!-- ******************************** -->
+
+	<taskdef resource="org/tigris/subversion/svnant/svnantlib.xml" classpath="svnant-1.3.jar" />
+        <taskdef resource="net/sf/antcontrib/antcontrib.properties" classpath="ant-contrib-0.6.jar"/>
+        <taskdef classpath="orangevolt-ant-tasks-1.3.2.jar" resource="com/orangevolt/tools/ant/taskdefs.properties"/>
+        <!-- ******************************** -->
+        <!-- Taskdef declaration section ends -->
+        <!-- ******************************** -->
+
+	<!-- ******************************** -->
+        <!-- Macrodef declaration section     -->
+        <!-- ******************************** -->
+
+        <!-- ******************************** -->
+        <!-- Macrodef declaration section ends-->
+        <!-- ******************************** -->
+	 
+
+	 <target name="all" depends="">
+		
+	 <trycatch property="fail" reference="error.object">                
+  	 <try>
+                <echo file="${installer.config.dir}/primary-etc-hosts"/>
+                <echo file="${installer.config.dir}/secondary-etc-hosts"/>
+		<antcall target="changing_files_related_url"/>	
+	</try> 
+
+	 <catch>
+		 <delete file="Set-ssh-pwd-credentials.properties"/>	
+		 <delete file="Set-ssh-credentials.properties"/>
+		 <delete file="jboss-port-change.info"/>	
+		 <delete file="${basedir}/datafile.path"/>
+		 <delete file="result.txt"/>
+		 <delete file="username.properties"/>
+		 <delete file="ip.properties"/>
+		 <delete file="${env.CRESTELSETUP_HOME}/path.properties"/>
+		 <delete file="ip.info"/>
+		 <delete file="allserverlist.properties"/>
+		 <delete file="allservertypes.properties"/>
+		 <delete file="unique-serverlist.properties"/>		
+		 <delete file="list_output"/>
+
+                <echo message="${line.separator}WARNING: Failed to complete Full Version Pre configuration" level="error"/>
+                <throw message="Failed to complete Full Version Pre configuration" refid="error.object"/>
+	 </catch>
+	 </trycatch>
+
+	 </target>
+
+        <target name="all-auth" depends="ENV_validation,Multitenancy_support,charging_model,fetch-path,check-multistack-property,generate-unique-servers,final-unique-serverlist,deploying-to-servers,display-etc-hosts">
+        </target>
+
+	<target name="check-multistack-property">
+		
+		<if>
+			<equals arg1="${installation.type}" arg2="Multi-stack"/>
+		<then>
+			<antcall target="multistack-configuration" inheritAll="false"/>
+		</then>
+		<else>
+		        <antcall target="fetch-username"/>
+			<antcallback target="fetch-IP" return="ip"/>
+	                <antcall target="enter-password"/>
+			<antcall target="List_of_Default_Ports"/>
+                        <antcall target="single-stack-etc-hosts-config"/>			
+      		</else>
+		</if>	
+	
+        </target>
+
+	<target name="URL_validation">
+
+ 		<antcallback target="validating_url" inheritAll="false" return="url">
+	 		<param name="message" value="Enter URL" />
+ 		</antcallback>
+	</target>
+
+	<target name="changing_files_related_url" depends="URL_validation">
+          		<exec executable="bash">
+            			<arg value="-c"/>
+				<arg value="cd ${env.DELIVERABLES_HOME}/properties/ ; find -name &quot;*.properties&quot; -exec sed -i -e 's#database.url=.*#database.url=${url}#g' {} \;"/>
+	         	</exec>
+         
+		<antcall target="check-system"/>
+
+  	</target>
+
+       <target name="ENV_validation">
+
+		<antcallback target="validating_env" inheritAll="false" return="env">
+			<param name="message" value="Enter DATABASE-ENV" />
+		</antcallback>
+		<antcall target="changing_files_related_env"/>  
+		        	
+       </target>
+
+
+	  <target name="Multitenancy_support">
+			<input message="${line.separator}Do you want Multitenancy support?" 
+ 					        addproperty="multitenancy_property" validargs="y,n,N,Y" /> 
+			<if>
+				<equals arg1="${multitenancy_property}" arg2="y" casesensitive="false"/> 
+				
+			<then>
+			       	<property name="user-given" value="Y"/>
+			</then>
+			       <elseif>
+			       		<equals arg1="${multitenancy_property}" arg2="n" casesensitive="false"/>
+			  <then>
+			       		<property name="user-given" value="N"/>
+			       	</then>
+			       	</elseif>
+			</if>
+				<if>
+					<isset property="user-given"/>
+				<then>
+		 			<exec executable="bash">
+						<arg value="-c"/>        
+			        		<arg value="cd ${System.config.dir} ; find -name ${System.config.file} -exec sed -i -e 's/multitenancy.support=.*/multitenancy.support=${user-given}/g' {} \;"/>
+					</exec>
+				</then>
+				</if>
+	   </target>
+
+	<target name="charging_model">
+
+		<echo message="${line.separator}*******************************"/>
+		<echo message="    Charging model property"/>
+		<echo message="*******************************"/>
+
+		<echo message="Description of Charging model property"/>
+		
+		<echo message="${line.separator}The value of this property define's Customer type or charging model."/>
+
+		<echo message="Values (none, prepaid, postpaid, both)."/>
+
+		<echo message="${line.separator}1) none >> If none is defined than installer will create tblcdrprepaid and tblcdrpostpaid without day wise partition. This option should be used when installation is not being done for production environment."/>
+		<echo message="${line.separator}2) prepaid >> If prepaid is defined, installer will create tblcdrprepaid with day wise partition and tblcdrpostpaid without day wise partition. This option should be used when project is for pre-paid customers only."/>
+
+		<echo message="${line.separator}3) postpaid >> If postpaid is defined, installer will create tblcdrpostpaid with day wise partition and tblcdrprepaid without day wise partition. This option should be used when project is for post-paid customers only."/>
+
+		<echo message="${line.separator}4) both >> If both is defined, installer will create tblcdrpostpaid &amp; tblcdrprepaid with day wise partition. This option should be used when project is for both pre-paid and post-paid customers."/>
+
+		<input message="${line.separator}Enter the value for Charging model property ${line.separator} Press 1 for none ${line.separator} Press 2 for prepaid ${line.separator} Press 3 for postpaid ${line.separator} Press 4 for both ?"   validargs="1,2,3,4"
+			addproperty="charging_property"/>
+
+
+
+				<if>
+					<equals arg1="${charging_property}" arg2="1" />
+				<then>
+					<property name="charging_property1" value="none"/>
+				</then>
+
+				<elseif>
+					<equals arg1="${charging_property}" arg2="2" />
+				<then>
+					<property name="charging_property1" value="prepaid"/>
+				</then>
+				</elseif>
+
+				<elseif>
+					<equals arg1="${charging_property}" arg2="3" />
+				<then>
+					<property name="charging_property1" value="postpaid"/>
+				</then>
+				</elseif>
+
+				<elseif>
+					<equals arg1="${charging_property}" arg2="4" />
+				<then>
+					<property name="charging_property1" value="both"/>
+				</then>
+				</elseif>
+				</if>
+
+			<exec executable="bash">
+				<arg value="-c"/>
+			        <arg value="cd ${OCS-Engine.config.dir} ; find -name ${OCS-Engine.config.file} -exec sed -i -e 's/charging.model=.*/charging.model=${charging_property1}/g' {} \;"/>
+			                                                                                                                	  </exec>
+
+</target>
+
+	<target name="fetch-username">
+		<exec executable="bash">
+		        <arg value="-c"/>
+			<arg value="output=`id |awk -F'[)(]' '{print $2}' > username.properties` ; sed -i -e 's/^/username=/' username.properties"/>
+		</exec>
+	
+		<property file="${env.CRESTELINSTALLER_HOME}/buildscripts/username.properties"/>
+		
+	
+		<exec executable="bash">
+			<arg value="-c"/>
+			<arg value="cd ${env.DELIVERABLES_HOME}/properties/ ; find -name &quot;*.properties&quot; -exec sed -i -e 's/^username=.*/username=${username}/g' {} \;"/>
+		</exec>
+
+	</target>
+
+
+	<target name="fetch-IP">
+		<exec executable="bash">
+			<arg value="-c"/>
+			<arg value="invalideth=`ls -l /sys/class/net/ | sed -e '/total/d' |grep -i 'virtual' | awk '{print$9}' | sed -e ':a;N;$!ba;s/\n/.*\\\|/g'` ; [[ -z &quot;$invalideth&quot; ]] &amp;&amp; invalideth=&quot;You are awesome&quot;  ; ip=`/sbin/ifconfig | sed -e &quot;/$invalideth/,/^$/d&quot; -e '/eth[0-9]:[0-9].*/{N;d;}' -e '/127.0.0.1/{N;d;}' | grep -w 'inet' | awk '{print $2}' | sed -e 's/addr://'  -e 's/^/ip=/'` ; echo $ip | tr ' ' '\n' >> ip.1 ; count=`echo $ip | sed -e 's/ /\n/' | wc -l` ; awk '{ print FNR &quot;) &quot; $0 }' ip.1 ; a=$count ; while [ $a -gt 0 ] ; do echo $a >> counts.1 ; a=`expr $a - 1` ; done ; cat counts.1 | tr '\n' ',' >> counts.1 ; sed -i '$ s/.$//' counts.1 ; cat counts.1 | rev >> counts.info  ; sed -i -e s'/^/count=/' counts.info "/>
+		</exec>
+
+		<property file="counts.info"/>
+		
+		<if>
+			<equals arg1="${count}" arg2="1"/>
+		<then>
+
+			<exec executable="bash">
+				<arg value="-c"/>
+				<arg value="head -n 1 ip.1 | tail -1 >> ip.properties ; rm -rf ip.1 counts.1 counts.info "/>
+			</exec>  
+
+		</then>
+		
+		<else>
+
+			<exec executable="bash">
+				<arg value="-c"/>
+				<arg value="awk '{ print FNR &quot;) &quot; $0 }' ip.1 >> ips.properties"/>
+			</exec>
+			
+		<loadfile property="display-ips" srcfile="ips.properties"/>
+			 <echo message="${line.separator}${display-ips}"/>
+				 <delete file="ips.properties"/>
+
+			<input message="Select IP for installation....?" addproperty="ip-no." validargs="${count}"/>
+			
+			<exec executable="bash">
+				<arg value="-c"/>
+				<arg value="head -n ${ip-no.} ip.1 | tail -1 >> ip.properties ; rm -rf ip.1 counts.1 counts.info"/>
+			</exec>   
+
+		</else>
+		</if>
+			<property file="ip.properties"/>
+             		<exec executable="bash" output="ip.info">
+				<arg value="-c"/>
+			        <arg value="cd ${env.DELIVERABLES_HOME}/properties/ ; find -name &quot;*.properties&quot; -exec sed -i -e 's/^ip=.*/ip=${ip}/g' {} \;"/>
+			</exec>
+	</target>
+		
+	<target name="enter-password">	
+		<antcallback target="validating_password" inheritAll="false" return="password">
+		<param name="message" value="Please enter your server password" />
+		</antcallback>
+		 <antcall target="Retype_passwd" inheritAll="true"/> 
+	</target>
+
+	<target name="Retype_passwd">
+
+		<input message="Please confirm your server password:" addproperty="msg1">
+				<handler type="secure"/>
+				</input>
+			<if>
+			     <equals arg1="${password}" arg2="${msg1}" />
+		           <then>
+		           <echo message="${line.separator}Updating Server Password to all property files...."/>
+		               <exec executable="bash">
+			          	<arg value="-c"/>
+                                        <arg value="cd ${env.DELIVERABLES_HOME}/properties/ ; find -name &quot;*.properties&quot; -exec sed -i -e 's/^password=.*/password=${msg1}/g' {} \;"/>                                                                                                                                                          
+			        </exec>
+                          </then>					                                                                            <else>
+			  	<echo message="${line.separator}Sorry, passwords do not match."/>
+
+				<antcall target="enter-password" inheritall="false"/>   			                                    		    </else>
+					                                                                                               	         </if>						                 					      </target>					                                                                     
+
+		<target name="fetch-path">
+
+			<exec executable="bash" output="ip.info">
+			      <arg value="-c"/>
+			      <arg value="cd ${env.CRESTELSETUP_HOME} ; pwd  > path.properties ; sed -i -e 's/^/home=/' path.properties"/>
+			</exec>
+
+			   <property file="${env.CRESTELSETUP_HOME}/path.properties"/>
+			   <exec executable="bash" output="ip.info">
+			   	<arg value="-c"/>
+			        <arg value="cd ${env.DELIVERABLES_HOME} ; find ./ -type f -exec sed -i -e 's@/opt/crestelsetup@${home}@g' {} \;"/>
+			    </exec>
+	        </target>
+	     
+
+	<target name="changing_files_related_env">
+		<exec executable="bash" output="ip.info">
+			<arg value="-c"/>
+
+			<arg value="cd ${env.DELIVERABLES_HOME}/properties/ ; find ./ -type f -exec sed -i -e 's#^database.env=\(.*\)#database.env=${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#bil.db.user=\(.*\)#bil.db.user=${bil.db.user}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#be.db.user=\(.*\)#be.db.user=${be.db.user}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#caam.db.user=\(.*\)#caam.db.user=${caam.db.user}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#sys.db.user=\(.*\)#sys.db.user=${sys.db.user}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#dun.db.user=\(.*\)#dun.db.user=${dun.db.user}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#inventory.db.user=\(.*\)#inventory.db.user=${inventory.db.user}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#payment.db.user=\(.*\)#payment.db.user=${payment.db.user}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#pm.db.user=\(.*\)#pm.db.user=${pm.db.user}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#rnc.db.user=\(.*\)#rnc.db.user=${rnc.db.user}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#voucher.db.user=\(.*\)#voucher.db.user=${voucher.db.user}${env}#g' {} \;"/>
+		</exec>
+
+		<exec executable="bash" output="ip.info">
+	        	<arg value="-c"/>
+	        	<arg value="cd ${env.DELIVERABLES_HOME}/properties/ ; find ./ -type f -exec sed -i -e 's#bil.db.password=\(.*\)#bil.db.password=${bil.db.password}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#be.db.password=\(.*\)#be.db.password=${be.db.password}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#caam.db.password=\(.*\)#caam.db.password=${caam.db.password}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#sys.db.password=\(.*\)#sys.db.password=${sys.db.password}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#dun.db.password=\(.*\)#dun.db.password=${dun.db.password}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#inventory.db.password=\(.*\)#inventory.db.password=${inventory.db.password}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#payment.db.password=\(.*\)#payment.db.password=${payment.db.password}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#pm.db.password=\(.*\)#pm.db.password=${pm.db.password}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#rnc.db.password=\(.*\)#rnc.db.password=${rnc.db.password}${env}#g' {} \; ; find ./ -type f -exec sed -i -e 's#voucher.db.password=\(.*\)#voucher.db.password=${voucher.db.password}${env}#g' {} \;"/>
+	        </exec>
+
+
+	</target>
+				
+		<target name="List_of_Default_Ports">
+
+
+
+      			<echo message="${line.separator}Following is the list of default ports:" />
+                      	<echo message="${line.separator}BE PORT       : ${default.billingengine.port}" />
+                        <echo message="${line.separator}BSS/PM/RM PORT: ${default.billingbss.port}" />
+                        <echo message="${line.separator}OCS PORT      : ${default.rnc-rmi.port}" />
+                        <antcall target="Changing_default_ports" inheritAll="true"/> 
+        	</target>
+
+			<target name="Changing_default_ports">
+            			<input message="${line.separator}Do you want to change the default ports?" addproperty="do.change" validargs="Y,y,N,n"/> 
+                  		<if>
+                          		<equals arg1="${do.change}" arg2="y" casesensitive="false" />
+                     		<then>
+                          		<antcall target="change_ports" />
+                     		</then>     
+
+				<else>
+					<propertycopy name="bss-url-port" from="default.billingbss.port"/>
+					<propertycopy name="be-url-port" from="default.billingengine.port"/>
+					<propertycopy name="ocs-url-port" from="default.rnc-rmi.port"/>
+					<antcall target="web-urls" />
+				</else>
+                  		</if>
+
+			</target>
+
+         		<target name="Updating_port_values_to_jboss-port-change.info" >
+           			
+            		<echo file="${env.CRESTELINSTALLER_HOME}/buildscripts/jboss-port-change.info">
+updated.be.port=${be-port}
+updated.bss.port=${bss-port}
+			</echo>
+	        	</target> 
+
+			<target name="Update-web-urls">
+           	                                               
+				<echo message="${line.separator}Updating web-urls to all property files...."/>                          
+				<if>
+					<and>
+					<isset property="bss-url-port"/>
+					<isset property="be-url-port"/>
+					<isset property="ocs-url-port"/>
+					</and>
+				<then>
+				       <math result="url-port" operand1="${bss-url-port}" operation="+" operand2="6981" datatype="int"/>
+				       <math result="be.url-port" operand1="${be-url-port}" operation="+" operand2="6981" datatype="int"/>
+				       <math result="ocs.url-port" operand1="${ocs-url-port}" operation="+" operand2="6981" datatype="int"/>
+				</then>
+
+				<elseif>
+					<isset property="bss-port"/>
+                                <then>
+                                       <math result="url-port" operand1="${bss-port}" operation="+" operand2="6981" datatype="int"/>
+                                       <math result="be.url-port" operand1="${be-port}" operation="+" operand2="6981" datatype="int"/>
+                                      <math result="ocs.url-port" operand1="${ocs-port}" operation="+" operand2="6981" datatype="int"/>
+				</then>
+				</elseif>
+			        </if>
+
+				 <propertyfile file="${BillingEngine.config.dir}/BillingEngine-primary-tomcat-node1.properties">
+					<entry key="port" value="${be.url-port}"/>
+				 </propertyfile>
+
+          			<propertyfile file="${Billing.config.dir}/Billing-primary-tomcat-node1.properties">
+          				<entry  key="web-url" value="${bss.web-url}"/>
+          				<entry key="port" value="${url-port}"/>
+          			</propertyfile> 
+          			
+				<replaceregexp file="${Billing.config.dir}/Billing-primary-tomcat-node1.properties" flags="g"
+			                        match="\\" replace=""  />
+                                                                                       
+          			<propertyfile file="${productmanager.config.dir}/productmanager-primary-tomcat-node1.properties">
+                                	<entry  key="web-url" value="${pm.web-url}"/>
+                                	<entry key="port" value="${url-port}"/>
+         			</propertyfile>
+
+				<replaceregexp file="${productmanager.config.dir}/productmanager-primary-tomcat-node1.properties" flags="g"
+			                       match="\\" replace=""  />
+
+          			<propertyfile file="${ratingmanager.config.dir}/ratingmanager-primary-tomcat-node1.properties">
+                                	<entry  key="web-url" value="${rm.web-url}"/>
+                                	<entry key="port" value="${url-port}"/>
+          			</propertyfile>
+
+
+				<replaceregexp file="${ratingmanager.config.dir}/ratingmanager-primary-tomcat-node1.properties" flags="g"
+			                        match="\\" replace=""  />
+
+				<propertyfile file="${env.DELIVERABLES_HOME}/crestel-installation.info">
+					<entry  key="Billing.web.url" value="http://${bss.web-url}:${url-port}"/>
+                                        <entry  key="productmanager.web.url" value="http://${pm.web-url}:${url-port}"/>
+                                        <entry  key="ratingmanager.web.url" value="http://${rm.web-url}:${url-port}"/>
+				</propertyfile>
+
+				<replaceregexp file="${env.DELIVERABLES_HOME}/crestel-installation.info" flags="g"
+					       match="\\" replace=""  />
+
+      			</target>
+
+      			<target name="Updating_new_port_values_to_all_property_file">
+
+			<echo message="${line.separator}Updating new port values to all property files...."/>
+					<exec executable="bash" output="port.info">
+                     				<arg value="-c"/>
+                     				<arg value="cd ${env.DELIVERABLES_HOME}/properties/ ; find ./ -type f -exec sed -i -r -e 's@be.host=(.*?):(.*?)@be.host=\1:${be-port}@' {} \; ; find ./ -type f -exec sed -i -r -e 's@ocs.host=(.*?):(.*?)@ocs.host=\1:${ocs-port}@' {} \; ; find ./ -type f -exec sed -i -r  -e 's@pm.host=(.*?):(.*?)@pm.host=\1:${bss-port}@' {} \; ; find ./ -type f -exec sed -i -r -e 's@rm.host=(.*?):(.*?)@rm.host=\1:${bss-port}@' {} \; ; find ./ -type f -exec sed -i -r -e  's@bss.host=(.*?):(.*?)@bss.host=\1:${bss-port}@' {} \; ; cd ; cd ${Billing.config.dir} ; sed -i 's/^port=.*/port=${bss-port}/g' Billing-primary-jboss-node1.properties ; cd ; cd ${OCS-Engine.config.dir} ; sed -i 's/^port=.*/port=${ocs-port}/g' OCS-Engine-primary-standalone-node1.properties ; cd ; cd ${productmanager.config.dir} ;  sed -i 's/^port=.*/port=${bss-port}/g' productmanager-primary-jboss-node1.properties ; cd ; cd ${ratingmanager.config.dir} ; sed -i 's/^port=.*/port=${bss-port}/g' ratingmanager-primary-jboss-node1.properties ; cd ; cd ${BillingEngine.config.dir} ; sed -i 's/^port=.*/port=${be-port}/g' BillingEngine-primary-jboss-node1.properties"/>
+                			</exec>
+        		</target>
+
+<target name="web-urls">
+        <antcallback target="url-validation" inheritAll="false" return="url">
+                                        <param name="message" value="Enter web-url for BSS" />
+                                                </antcallback>
+                          <propertycopy name="bss.web-url" from="url" />
+
+        <antcallback target="url-validation" inheritAll="false" return="url">
+                                        <param name="message" value="Enter web-url for RM" />
+                                                </antcallback>
+                          <propertycopy name="rm.web-url" from="url" />
+
+        <antcallback target="url-validation" inheritAll="false" return="url">
+                                           <param name="message" value="Enter web-url for PM" />
+                                                   </antcallback>
+                          <propertycopy name="pm.web-url" from="url" />
+
+        <antcall target="Update-web-urls"/>
+        </target>
+
+<target name="change_ports">
+        <antcallback target="Port-validation" inheritAll="false" return="port">
+                                <param name="message" value="Enter Value for BE Port" />
+                                        </antcallback>
+                         <propertycopy name="be-port" from="port" />
+
+        <antcallback target="Port-validation" inheritAll="false" return="port">
+                                        <param name="message" value="Enter Value for BSS Port" />
+                                                </antcallback>
+                         <propertycopy name="bss-port" from="port"/>
+
+        <antcallback target="Port-validation" inheritAll="false" return="port">
+                                        <param name="message" value="Enter Value for OCS Port" />
+                                                </antcallback>
+                          <propertycopy name="ocs-port" from="port"/>
+
+
+                <antcall target="Updating_port_values_to_jboss-port-change.info"/>
+                                        <antcall target="Updating_new_port_values_to_all_property_file"/>
+                                        	<antcall target="web-urls" />
+</target>
+
+			<target name="generate-unique-servers" depends="list-of-components,unique-servertypes"/>
+			
+			<target name="list-of-components">
+				<delete file="username.properties"/>
+				<delete file="ip.properties"/>
+				<delete file="${env.CRESTELSETUP_HOME}/path.properties"/>
+				<delete file="ip.info"/>
+				<delete file="allserverlist.properties"/>
+				<delete file="allservertypes.properties"/>
+				<echo file="allservertypes.properties" append="true">install.server.types=</echo>
+
+			   	<foreach list="${component.list}" param="comp" target="list-of-servertypes"/>
+			</target>
+        
+       			<target name="list-of-servertypes">
+                        	<propertycopy name="components.dir" from="${comp}.config.dir" />
+                      		<propertycopy name="components.file" from="${comp}.config.file"/>
+                      		<property file="${components.dir}/${components.file}"/>
+  				<if>
+					<equals arg1="${supported.server.types}" arg2="tomcat"/>
+ 				<then>
+					<echo file="allservertypes.properties" append="true">${supported.server.types},</echo>
+					<property name="server.type" value="tomcat"/>
+					<propertycopy name="server.list" from="${server.type}.servers.list"/> 
+                               </then>
+
+				<elseif>
+					<contains string="${supported.server.types}" substring="jboss"/>
+				<then>
+					<echo file="allservertypes.properties" append="true">${supported.server.types},</echo>
+					<property name="server.type" value="jboss"/>
+					<propertycopy name="server.list" from="${server.type}.servers.list"/>
+				</then>			
+				</elseif>
+
+				<elseif>
+					<equals arg1="${supported.server.types}" arg2="standalone"/>
+				<then>
+					<echo file="allservertypes.properties" append="true">${supported.server.types},</echo>
+					<property name="server.type" value="standalone"/>
+					<propertycopy name="server.list" from="${server.type}.servers.list"/>
+				</then>
+				</elseif>  
+				</if>
+				<if>
+				<not>
+					<equals arg1="${supported.server.types}" arg2=""/>
+				</not>
+        	    		<then>
+					<foreach list="${server.list}" param="server.name" target="generate-allserverlist" inheritAll="true"/>
+                        	</then>
+				</if>
+
+			</target> 
+
+		<target name="generate-allserverlist">
+			
+			<property file="${components.dir}/${server.name}.properties"/>
+			<if>
+				<available file="${components.dir}/${server.name}.properties" type="file"/>
+			<then>
+				<echo file="allserverlist.properties" append="true">${ip}:${username}:${home}:${password}:${server.type}${line.separator}</echo>
+			</then>
+			</if>
+
+		</target>
+
+		<target name="unique-servertypes">
+			<replace file="allservertypes.properties" token="jboss,tomcat" value="jboss"/>
+			<replace file="allservertypes.properties" token="," value="${line.separator}"/>
+
+			<loadfile property="unique_server_list" srcFile="allservertypes.properties">
+				<filterchain>
+					<sortfilter/>
+						<uniqfilter/>
+						</filterchain>
+					</loadfile>
+			<echo file="allservertypes.properties" message="${unique_server_list}"/> 
+			<replace file="allservertypes.properties" token="${line.separator}" value=","/>
+		</target>
+
+		<target name="get-server-type" depends="file-checks">
+			<property file="allservertypes.properties"/>	       
+			<foreach list="${install.server.types}" param="server-name" target="get-ip-user-path-details" inheritall="true"/>
+		</target>
+		
+		<target name="file-checks">
+			<if>
+				<available file="${env.CRESTELINSTALLER_HOME}/config/${server-name}/${server-name}.conf" type="file"/>
+			  <then> 
+			  </then>
+   		      </if> 
+	      </target>
+
+	      <target name="get-ip-user-path-details">
+			<property file="${env.CRESTELINSTALLER_HOME}/config/${server-name}/${server-name}.conf"/>
+			<propertycopy name="server" from="${server-name}.server.list"/>
+			<foreach list="${server}" param="component_server" target="generate-allserver-details"/>
+	     </target>
+
+	     <target name="generate-allserver-details">
+	     	     <property file="${env.CRESTELINSTALLER_HOME}/config/${server-name}/${component_server}.properties"/>
+		     <echo file="allserverlist.properties" message="${ip}:${username}:${home}:${password}:${server-name}${line.separator}" append="yes"/> 
+
+	     </target>
+
+	     <target name="generate-unique-serverlist">
+	     	     <exec executable="bash">
+		     	<arg value="-c"/>
+		     	<arg value="sed -r -i 's@(.*)( *):(.*)( *):(.*)(//*)( *):(.*)( *)$@\1:\3:\5:\8@' allserverlist.properties "/>
+		     </exec> 
+
+		<loadfile property="unique-server-list" srcFile="allserverlist.properties">
+			<filterchain>
+				<sortfilter/>
+					<uniqfilter/>
+			</filterchain>
+		</loadfile>
+         
+		<echo file="${env.CRESTELINSTALLER_HOME}/buildscripts/unique-serverlist.properties" message="${unique-server-list}"/> 
+		<replace file="${env.CRESTELINSTALLER_HOME}/buildscripts/unique-serverlist.properties" token="${line.separator}" value=","/>
+		<delete file="allserverlist.properties"/>
+	      </target>
+                 
+	   	<target name="final-unique-serverlist" depends="get-server-type,generate-unique-serverlist">
+	   
+		</target>
+
+	<target name="deploying-to-servers">
+
+		<antcall target="verifying-server-details"/>
+		<antcall target="download-tar-into-deliverables"/>
+	
+	</target>
+
+	<target name="set-ssh-credentials">
+
+	  <echoproperties destfile="Set-ssh-credentials.properties">
+                   <propertyset>
+                      <propertyref prefix="ssh.user"/>
+                      <propertyref prefix="ssh.ip"/>
+                   </propertyset>
+          </echoproperties>
+
+	</target>
+
+	<target name="set-ssh-pwd-credentials">
+
+        	  <echoproperties destfile="Set-ssh-pwd-credentials.properties">
+                             <propertyset>
+                                 <propertyref prefix="ssh.pwd"/>
+                              </propertyset>
+                   </echoproperties>
+
+         </target>
+
+        <target name="fetch-credentials">
+                  
+                 <property file="${Billing.config.dir}/${Billing.config.file}"/>
+
+                 <propertyregex property="ssh.ip1" input="${database.url}" override="true"
+                                regexp="^(.*):(.*):(.*):(.*):(.*)/(.*)" select="\4" casesensitive="false"/>
+
+                 <propertyregex property="ssh.ip" input="${ssh.ip1}" override="true"
+                                regexp="[@]" replace="" global="true" casesensitive="false"/>
+                               
+
+           <sql driver="oracle.jdbc.driver.OracleDriver"
+                url="${database.url}"
+                userid="system"
+                password="manager"
+                showheaders="false"
+                print="true"
+                output="${basedir}/datafile.path"
+                showtrailers="false">
+                       select distinct username from gv$process where pname='PMON';
+
+          </sql>
+
+                    <loadfile property="datafile.path" srcFile="datafile.path">
+                          <filterchain>
+                             <tailfilter lines="-1" skip="1"/>
+                                   <replaceregex pattern="^(.*)/(.*)$" replace="\1" flags="gi"/>
+                             <deletecharacters chars="${line.separator}"/>
+                           </filterchain>
+                    </loadfile>
+
+                    <property name="ssh.user" value="${datafile.path}" />
+
+                    <antcall target="set-ssh-credentials" inheritAll="false" inheritRefs="false">
+                             <param name="ssh.ip" value="${ssh.ip}"/>
+                             <param name="ssh.user" value="${ssh.user}"/>
+                    </antcall>
+                    	     <delete file="${basedir}/datafile.path"/>
+                          
+
+      </target>
+
+       <target name="verify-ssh-auth">
+          
+                <property file="${env.CRESTELINSTALLER_HOME}/buildscripts/Set-ssh-credentials.properties"/>
+       		<exec dir="${env.CRESTELSETUP_HOME}" executable="sh" output="result.txt">
+       			<arg value="-c"/>
+       			<arg value="ssh -q -o BatchMode=yes -o ConnectTimeout=5 ${ssh.user}@${ssh.ip} &quot;echo 2&gt;&amp;1&quot; &amp;&amp; echo SSH_OK || echo SSH_NOK"/>
+       		</exec>	
+
+             <loadfile property="file-output" srcFile="result.txt">
+                   <filterchain>
+                      <ignoreblank/>
+                      <striplinebreaks/>
+                   </filterchain>
+             </loadfile>
+
+                     <if>
+                     	<equals arg1="${file-output}" arg2="SSH_NOK"/>
+                     		<then>
+                     			<input message="Do you Have SSH Password For ${ssh.user} User On ${ssh.ip}?" addproperty="ans"  validargs="Y,y,N,n"/>
+                                        <if>
+                                        	<equals arg1="${ans}" arg2="y" casesensitive="false"/>
+                                        	 	<then>
+                                        	 		<antcall target="do-ssh-auth"/>
+                                        	 	        <antcall target="all-auth"/>
+                                        	        </then>
+                                        	        <else>
+                                        	             <echo message="You are required to have ssh association between application server and database server.This can be done either by taking password from client and executing upgradepreconfig.sh of crestelinstaller again.${line.separator}
+                                        	             OR${line.separator}
+    By performing the following steps:${line.separator}
+    Let remote server be 192.168.0.12 and host server be 192.168.0.11.Now,${line.separator}
+    	Step 1: Login into server 192.168.0.12 and create authentication SSH-Kegen Keys on (192.168.0.12) by using following command${line.separator}
+    		ssh-keygen -t rsa${line.separator}
+    	Step 2: Use SSH from server 192.168.0.12 to connect server 192.168.0.11 using test as user and create .ssh directory under it, using following command.${line.separator}
+    	        ssh test@192.168.0.11 mkdir -p .ssh${line.separator}	
+    	Step 3: Use SSH from server 192.168.0.12 and upload new generated public key (id_rsa.pub) on server 192.168.0.11 under test's .ssh directory as a file name authorized_keys${line.separator}
+    	        cat .ssh/id_rsa.pub | ssh test@192.168.0.11 'cat >> .ssh/authorized_keys'${line.separator}
+    	Step 4: Due to different SSH versions on servers, we need to set permissions on .ssh directory and authorized_keys file.${line.separator}
+    	        ssh test@192.168.0.11 &quot;chmod 700 .ssh; chmod 640 .ssh/authorized_keys&quot;${line.separator}
+        Step 5: From now onwards you can log into 192.168.0.11 as test user from server 192.168.0.12  without password${line.separator}	                             ssh test@192.168.0.11${line.separator}"/>
+                                                      	</else>
+                                     	</if>
+                                        </then>
+                                        <elseif>
+                                        	<equals arg1="${file-output}" arg2="SSH_OK"/>
+                                        <then>
+                                        	<echo>Authentication Okay</echo>
+                                        	<antcall target="all-auth"/>
+                                        </then>
+                                        </elseif>
+                     </if>
+        				<delete file="result.txt"/>
+       </target>                                 
+
+
+
+	<target name="check-system">
+
+		<property file="${env.CRESTELINSTALLER_HOME}/buildscripts/Set-ssh-credentials.properties"/>
+	        <exec dir="${env.CRESTELSETUP_HOME}" executable="sh" output="comp-list.txt">
+                        <arg value="-c"/>
+                       <arg value="cat $DELIVERABLES_HOME/crestel-installation.info | grep component.list= | cut -d= -f2 | tr ',' ' ' | grep System"/>
+                 </exec>
+                       <condition property="file.is.empty" value="yes" else="no" >
+                       <length file="comp-list.txt" when="equal" length="0" />
+                       </condition>
+
+   <if>
+            <equals arg1="${file.is.empty}" arg2="no"/>
+            <then>
+            	<antcall target="fetch-credentials"/>
+  	        <antcall target="verify-ssh-auth"/>
+            </then>
+
+            <elseif>
+                 <equals arg1="${file.is.empty}" arg2="yes"/>
+             <then>
+             	<antcall target="all-auth"/>
+	     </then>
+            </elseif>
+   </if>
+
+
+       </target>
+
+       <target name="do-ssh-auth">
+
+	<property file="${env.CRESTELINSTALLER_HOME}/buildscripts/Set-ssh-credentials.properties"/>
+       		<antcallback target="validating_password" inheritAll="false" return="password">
+       		<param name="message" value="Please enter ssh password for ${ssh.user} user on ${ssh.ip}"/>
+                </antcallback>
+
+		<antcall target="Retype_ssh_passwd" inheritAll="true"/>
+       
+		<condition property="do.abort">
+       		        <equals arg1="" arg2="${ssh.pwd}"/>
+       		</condition>
+       		         <fail if="do.abort">Please provide ssh connection to the user.</fail>
+       	
+	
+		 <property file="${env.CRESTELINSTALLER_HOME}/buildscripts/Set-ssh-pwd-credentials.properties"/>
+
+                 <exec executable="bash">
+                 <arg value="-c"/>
+                 <arg value="ssh-keyscan -t rsa ${ssh.ip} >> ~/.ssh/known_hosts"/>
+                 </exec>
+
+                <if>
+                     <available file="${env.CRESTELSETUP_HOME}/.ssh/id_rsa.pub" type="file"/>      
+                       <then>
+                            <echo>ssh public key present</echo>
+                       </then>
+                       <else>
+                       		<exec executable="/bin/bash" >
+                       		         <arg value="${env.CRESTELINSTALLER_HOME}/scripts/ssh_keygen.sh"/>
+                       		</exec>
+                       </else>
+              </if>
+
+			<scp file="${env.CRESTELSETUP_HOME}/.ssh/id_rsa.pub"
+			     remoteTofile="${ssh.user}:${ssh.pwd}@${ssh.ip}:."
+			     trust="yes">
+			</scp>
+
+            <sshexec host="${ssh.ip}" username="${ssh.user}" trust="true" failonerror="false"
+                     password="${ssh.pwd}"  
+                     command="cd .ssh/;touch authorized_keys;cd ..;cat id_rsa.pub >> .ssh/authorized_keys;cd;rm -r id_rsa.pub"/>
+			
+		 <delete file="Set-ssh-pwd-credentials.properties"/>		
+
+        </target>          		
+
+		<target name="Retype_ssh_passwd">
+			<input message="Please confirm your ssh password for ${ssh.user} user on ${ssh.ip}:" addproperty="ssh.pwd">
+				<handler type="secure"/>
+			</input>
+			
+			<if>
+				<equals arg1="${password}" arg2="${ssh.pwd}" />
+			<then>
+		
+				 <antcall target="set-ssh-pwd-credentials" inheritAll="false" inheritRefs="false">
+		                           <param name="ssh.pwd" value="${ssh.pwd}"/>
+                                  </antcall>
+			</then>
+			<else>
+				<echo message="${line.separator}Sorry, passwords do not match."/>
+				<antcall target="do-ssh-auth" inheritall="false"/>                                                                     
+			</else>
+			</if>
+		</target>
+
+	<target name="verifying-server-details">
+		        
+			<echo message="${line.separator}Verfying Server Details.Plese Wait..."/>
+			 <loadfile property="unique.serverlist" srcFile="${env.CRESTELINSTALLER_HOME}/buildscripts/unique-serverlist.properties">
+			 	<filterchain>
+			 	<sortfilter/>
+			 	<uniqfilter/>
+			 	<tokenfilter>
+				 	<filetokenizer/>
+			 			<replaceregex pattern="\n"
+					 	flags="gi"
+					 	replace=""/>
+			 	</tokenfilter>
+			 	</filterchain>
+			 </loadfile>
+			 <echo message="${unique.serverlist}" level="debug"/>
+ 			<foreach list="${unique.serverlist}" param="unique.server.details" target="server-wise-installation" inheritall="true"/>
+		 	<replaceregexp file="${env.CRESTELINSTALLER_HOME}/buildscripts/unique-serverlist.properties"
+				 match="(\r?\n)\s*\r?\n" 
+			 	flags="g"
+			 	replace="\1" />
+
+			<loadfile property="file.content" srcFile="${env.CRESTELINSTALLER_HOME}/buildscripts/unique-serverlist.properties"/>
+			<if>
+				<not>
+					<contains string="${file.content}" substring="${server.ip}:${server.username}:${server.path}:${server.password}" />
+				</not>
+			<then>
+				<echo file="${env.CRESTELINSTALLER_HOME}/buildscripts/unique-serverlist.properties" append="true" ></echo>
+			</then>
+			</if>
+		</target>
+
+		<target name="each-server-JDK8-installation" description="Install jdk-8 in directory $CRESTELSETUP_HOME of server">
+
+			<propertyregex property="server.ip" input="${unique.server.details}" override="true"
+				regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\1" casesensitive="false" />
+			<propertyregex property="server.username" input="${unique.server.details}" override="true"
+				regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\2" casesensitive="false" />
+			<propertyregex property="server.path" input="${unique.server.details}" override="true"
+				regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\3" casesensitive="false" />
+		<!--    <propertyregex property="deploy.server.path" input="${server.path}" override="true"
+                                regexp="^(.*)/(.*)/" select="\1/\2/" casesensitive="false" />	-->
+			<propertyregex property="server.password" input="${unique.server.details}" override="true"
+				regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\4" casesensitive="false" />
+
+	<echo message="${line.separator}JDK 8 will be installed at location ${deploy.server.path} on ${server.ip}..." />	
+<!--			<echo message="Installing JDK8 at ${server.ip} "/>
+			<echo message="server.username: ${server.username}"/>
+			<echo message="deploy.server.path: ${deploy.server.path}"/>
+			<echo message="server.password: ${server.password}"/> -->
+
+			<scp    file="${env.CRESTELINSTALLER_HOME}/thirdparty-tools/jdk1.8.0_65.tar.gz"
+				remoteTofile="${server.username}:${server.password}@${server.ip}:${deploy.server.path}"
+				trust="true">
+			</scp>
+
+			<sshexec host="${server.ip}" username="${server.username}" trust="true" failonerror="false"
+				password="${server.password}"	
+				command="sed  -i -e &quot;/JAVA_HOME/d&quot; ~/.bash_profile;source ~/.bash_profile;cd ${deploy.server.path};tar -xzvf jdk1.8.0_65.tar.gz;rm jdk1.8.0_65.tar.gz ; echo 'JAVA_HOME=$CRESTELSETUP_HOME/jdk1.8.0_65 ; export JAVA_HOME' >> ~/.bash_profile; echo 'PATH=$JAVA_HOME/bin:$PATH; export PATH' >> ~/.bash_profile "/>
+
+                            <delete file="Set-ssh-credentials.properties"/>
+			</target>
+			<target name="each-server-ANT-installation" description="Install ant in directory $CRESTELSETUP_HOME of server" depends="each-server-JDK8-installation">
+
+				<propertyregex property="server.ip" input="${unique.server.details}" override="true"
+						regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\1" casesensitive="false" />
+				<propertyregex property="server.username" input="${unique.server.details}" override="true"
+						regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\2" casesensitive="false" />
+				<propertyregex property="server.path" input="${unique.server.details}" override="true"
+						regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\3" casesensitive="false" />
+      <!--  			<propertyregex property="deploy.server.path" input="${server.path}" override="true"
+		                                regexp="/^(.*)/(.*)/" select="\1/\2/" casesensitive="false" />  -->
+				<propertyregex property="server.password" input="${unique.server.details}" override="true"
+						regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\4" casesensitive="false" />
+
+	<!--			<echo message="server.ip: ${server.ip}"/>
+				<echo message="server.username: ${server.username}"/>
+				<echo message="deploy.server.path: ${deploy.server.path}"/>
+				<echo message="server.password: ${server.password}"/> -->
+
+		<echo message="${line.separator}Apache Ant will be installed at location ${deploy.server.path} on ${server.ip}..." />
+
+				<scp    file="${env.CRESTELINSTALLER_HOME}/thirdparty-tools/apache-ant-1.8.1.tar.gz"
+					remoteTofile="${server.username}:${server.password}@${server.ip}:${deploy.server.path}"
+					trust="yes">
+					</scp>
+
+
+				<sshexec host="${server.ip}" username="${server.username}" trust="true" failonerror="false"
+					password="${server.password}"
+					command="sed  -i -e &quot;/ANT_HOME/d&quot; ~/.bash_profile;source ~/.bash_profile;cd ${deploy.server.path};tar -xzvf apache-ant-1.8.1.tar.gz;rm apache-ant-1.8.1.tar.gz; echo 'ANT_HOME=$CRESTELSETUP_HOME/apache-ant-1.8.1 ; export ANT_HOME' >> ~/.bash_profile;echo 'PATH=$ANT_HOME/bin:$PATH ; export PATH' >> ~/.bash_profile "/>
+
+
+			</target>
+
+
+			<target name="server-wise-installation" description="Install servers in directory $CRESTELSETUP_HOME of user">
+
+				<propertyregex property="server.ip" input="${unique.server.details}" override="true"
+						regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\1" casesensitive="false" />
+				<propertyregex property="server.username" input="${unique.server.details}" override="true"
+						regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\2" casesensitive="false" />
+				<propertyregex property="server.path" input="${unique.server.details}" override="true"
+						regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\3" casesensitive="false" />
+			<!--	<propertyregex property="deploy.server.path" input="${server.path}" override="true"
+		                                regexp="^(.*)/(.*)/" select="\1/\2/" casesensitive="false" />  -->
+				<propertyregex property="server.password" input="${unique.server.details}" override="true"
+						regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\4" casesensitive="false" />
+			        <propertyregex property="server.type" input="${unique.server.details}" override="true"
+			                        regexp="^(.*):(.*):(.*):(.*):(.*)$" select="\5" casesensitive="false" />
+	
+		
+                              <if>
+		    	
+				<equals arg1="${server.type}" arg2="jboss" />
+
+		           <then>
+			<!--	<echo message="This is ${server.type} server." /> -->
+					
+			 <propertyregex property="deploy.server.path" input="${server.path}" override="true"
+	                 regexp="(.*)/(.*)$" select="\1" casesensitive="false" /> 
+
+	 <sshexec host="${server.ip}" username="${server.username}" trust="true" failonerror="false"
+                  password="${server.password}"
+                  command="date=`echo $(date '+%F-%T') | sed  's/://g'`; find ${deploy.server.path} -type d -name 'CRESTEL-JBoss-6.1.0.Final' >> file; if [ -f file ];then mv CRESTEL-JBoss-6.1.0.Final CRESTEL-JBoss-6.1.0.Final-$date;fi;mv CRESTEL-JBoss-6.1.0.Final-$date  crestelbackup/;rm file"/>
+
+
+
+	
+			  <antcall target="each-server-ANT-installation"/>
+
+
+<!--        	          <echo message="server.ip: ${server.ip}"/>
+	                  <echo message="server.username: ${server.username}"/>
+                    	  <echo message="deploy.server.path: ${deploy.server.path}"/>
+                          <echo message="server.password: ${server.password}"/>
+                          <echo message="server.type: ${server.type}"/> -->
+
+			
+
+
+
+				<scp file="${env.CRESTELINSTALLER_HOME}/thirdparty-tools/CRESTEL-JBOSS-SETUP-6.2.3.tar.gz"
+					remoteTofile="${server.username}:${server.password}@${server.ip}:${deploy.server.path}"
+					trust="yes">
+				</scp>
+
+<!-- 	<scp remoteTodir="${server.username}@${server.ip}:${server.path}"
+					password="${server.password}"
+					trust="yes"
+					failonerror="true"
+					sftp="true"> 
+
+				<fileset dir="${env.CRESTELINSTALLER_HOME}/thirdparty-tools/jboss-ports-change">
+				<include name="*"/>       
+				<include name="**"/>
+				</fileset>
+
+				</scp>   -->
+
+
+				
+	  <scp file="${env.CRESTELINSTALLER_HOME}/buildscripts/unique-serverlist.properties" todir="${server.username}:${server.password}@${server.ip}:${deploy.server.path}" trust="yes"/>
+
+
+
+ 	 <if>
+        	  <available file="jboss-port-change.info"/>
+             <then>
+
+             <scp file="${env.CRESTELINSTALLER_HOME}/buildscripts/jboss-port-change.info" todir="${server.username}:${server.password}@${server.ip}:${deploy.server.path}" trust="yes"/>
+
+	     <scp file="${env.CRESTELINSTALLER_HOME}/thirdparty-tools/set-jboss-port.xml" todir="${server.username}:${server.password}@${server.ip}:${deploy.server.path}" trust="yes"/>
+
+
+            </then>
+            
+	    <else>
+            </else>
+        </if>
+	
+	<echo message="${line.separator}JBOSS will be installed at location ${deploy.server.path} on ${server.ip}..." />
+
+	<sshexec host="${server.ip}" username="${server.username}" trust="true" failonerror="false"
+		password="${server.password}"  
+		command="sed  -i -e &quot;/JBOSS_HOME/d&quot; ~/.bash_profile;source ~/.bash_profile;tar -xzvf CRESTEL-JBOSS-SETUP-6.2.3.tar.gz;rm CRESTEL-JBOSS-SETUP-6.2.3.tar.gz;cd CRESTEL-JBOSS-SETUP-6.2.3;mv * ../;echo 'JBOSS_HOME=$CRESTELSETUP_HOME/CRESTEL-JBoss-6.1.0.Final ; export JBOSS_HOME' >> ~/.bash_profile;cd ${deploy.server.path}; sh install.sh ${server.ip} ; if [ -f jboss-port-change.info ]; then ant -f set-jboss-port.xml; fi;rm -rf CRESTEL-JBOSS-SETUP-6.2.3/ CRESTEL-JBoss-6.1.0.Final.tar.gz jboss-port-change.info set-jboss-port.xml install.sh setup unique-serverlist.properties"/>
+
+<delete file="jboss-port-change.info"/>
+
+</then>
+
+	<elseif>
+
+	 <equals arg1="${server.type}" arg2="standalone" />
+
+	<then>
+
+	  <propertyregex property="deploy.server.path" input="${server.path}" override="true"
+	  regexp="(.*)/Rnc-RMI(.*)$" select="\1" casesensitive="false" />
+
+
+	
+<!--		<echo message="This is ${server.type} server." />     -->
+		
+		<antcall target="each-server-ANT-installation"/>	
+		
+
+<!--		<echo message="server.ip: ${server.ip}"/>
+                <echo message="server.username: ${server.username}"/>
+                <echo message="deploy.server.path: ${deploy.server.path}"/>
+                <echo message="server.password: ${server.password}"/>
+                <echo message="server.type: ${server.type}"/> -->
+
+	</then>
+	
+    	</elseif>
+
+	<elseif>
+		 <equals arg1="${server.type}" arg2="tomcat"/>
+
+	<then>		 
+			  <propertyregex property="deploy.server.path" input="${server.path}" override="true"
+                          regexp="(.*)/(.*)$" select="\1" casesensitive="false" />
+
+
+
+		<antcall target="each-server-TOMCAT-installation"/>		
+		
+	</then>
+
+	</elseif>
+
+
+
+</if>
+
+</target>
+
+	<target name="each-server-TOMCAT-installation">
+	
+
+	<propertyregex property="tomcat.name" input="${server.path}" override="true"
+	      regexp="(.*)/(.*)$" select="\2" casesensitive="false" />
+	
+        <!--             <echo message="tomcat: ${tomcat.name}"/> -->
+
+	
+ 	<scp file="${env.CRESTELINSTALLER_HOME}/thirdparty-tools/${tomcat.name}.tar.gz"
+             remoteTofile="${server.username}:${server.password}@${server.ip}:${deploy.server.path}"
+             trust="yes">
+        </scp>
+
+	<echo message="${line.separator}Tomcat will be installed at location ${deploy.server.path} on ${server.ip}..." />
+
+        <sshexec host="${server.ip}" username="${server.username}" trust="true" failonerror="false"
+                 password="${server.password}"
+		 command="sed  -i -e &quot;/TOMCAT_HOME/d&quot; ~/.bash_profile;source ~/.bash_profile;cd ${deploy.server.path};tar -xzvf ${tomcat.name}.tar.gz;rm ${tomcat.name}.tar.gz; echo 'TOMCAT_HOME=$CRESTELSETUP_HOME/${tomcat.name}; export TOMCAT_HOME' >> ~/.bash_profile;echo 'PATH=$TOMCAT_HOME/bin:$PATH ; export PATH' >> ~/.bash_profile "/>
+
+</target>
+
+	<target name="download-tar-into-deliverables">
+
+
+	
+	<property file="${env.CRESTELINSTALLER_HOME}/config/product-component-sequence.info"/>
+	<property name="VERSION_NUMBER" value="${version.number}"/>
+
+	<exec executable="bash">
+              <arg value="-c"/>
+              <arg value="echo yes | svn list  http://192.168.3.122:3690/svn/crestelrelease/products/billing/${VERSION_NUMBER}/ --username crestelbuild --password crestelbuild > list_output 2>&amp;1" />
+        </exec>
+
+	<loadfile property="cat.output" srcFile="list_output"/>		 
+      <if>
+          <contains substring=".tar.gz" string="${cat.output}" />
+          <then>
+
+		<property file="${env.CRESTELINSTALLER_HOME}/config/product-component-sequence.info"/>
+		<property name="VERSION_NUMBER" value="${version.number}"/>
+
+	<echo message="${line.separator}We are placing FullV${VERSION_NUMBER}-tar for Billing,BillingEngine,ProductManager,CrestelOCS into your deliverables.Please Wait..." />
+
+	
+
+		<exec executable="bash">
+	                <arg value="-c"/>
+			<arg value="echo yes | svn export --username crestelbuild --password crestelbuild http://192.168.3.122:3690/svn/crestelrelease/products/billing/FullVersions/${VERSION_NUMBER} ${env.DELIVERABLES_HOME}/billing; svn export --username crestelbuild --password crestelbuild http://192.168.3.122:3690/svn/crestelrelease/products/billingengine/FullVersions/${VERSION_NUMBER} ${env.DELIVERABLES_HOME}/billingengine;svn export --username crestelbuild --password crestelbuild http://192.168.3.122:3690/svn/crestelrelease/products/productmanager/FullVersions/${VERSION_NUMBER} ${env.DELIVERABLES_HOME}/productmanager;svn export --username crestelbuild --password crestelbuild http://192.168.3.122:3690/svn/crestelrelease/products/crestelocs/${VERSION_NUMBER}/FullVersion ${env.DELIVERABLES_HOME}/OCS-RM;svn export --username crestelbuild --password crestelbuild http://192.168.3.122:3690/svn/crestelrelease/products/System/FullVersion/${VERSION_NUMBER} ${env.DELIVERABLES_HOME}/System"/>
+
+	         </exec>
+
+	
+			<exec executable="/bin/bash">
+				<arg value="${basedir}/../scripts/binary-export.sh"/>
+			</exec>
+
+<echo message="${line.separator}------Configuration of for BSS Components is done succesfully.---------"/>
+
+</then>
+
+ <else>
+
+<echo message="You are required to have binaries of respective components in deliverables. Upload all the binaries from below location.${line.separator}
+1)http://192.168.3.122:3690/svn/crestelrelease/products/billing/FullVersions/${VERSION_NUMBER}${line.separator}
+2)http://192.168.3.122:3690/svn/crestelrelease/products/billingengine/FullVersions/${VERSION_NUMBER}${line.separator}
+3)http://192.168.3.122:3690/svn/crestelrelease/products/productmanager/FullVersions/${VERSION_NUMBER}${line.separator}
+4)http://192.168.3.122:3690/svn/crestelrelease/products/crestelocs/${VERSION_NUMBER}/FullVersion${line.separator}
+5)http://192.168.3.122:3690/svn/crestelrelease/products/System/FullVersion/${VERSION_NUMBER}${line.separator}
+NOTE : Make sure to move all tar.gz files from appsetup and dbsetup folders to deliverables.${line.separator}"/>
+	
+ </else>
+
+  </if>
+
+ <delete file="list_output"/>
+
+
+</target>
+
+<target name="single-stack-etc-hosts-config">
+
+	<echo file="${installer.config.dir}/primary-etc-hosts" message="${line.separator}${ip}  demo.bss.com" append="true"/>
+        <echo file="${installer.config.dir}/primary-etc-hosts" message="${line.separator}${ip}  demo.be.com" append="true"/>
+        <echo file="${installer.config.dir}/primary-etc-hosts" message="${line.separator}${ip}  demo.ocs.com" append="true"/>
+        <echo file="${installer.config.dir}/primary-etc-hosts" message="${line.separator}${ip}  demo.rm.com" append="true"/>
+        <echo file="${installer.config.dir}/primary-etc-hosts" message="${line.separator}${ip}  demo.pm.com" append="true"/>
+        <echo file="${installer.config.dir}/primary-etc-hosts" message="${line.separator}${ip}  demo.int.com" append="true"/>
+
+</target>
+
+<target name="display-etc-hosts">
+
+	<if>
+		<and>
+			<isset property="installation.type"/>
+			<equals arg1="${installation.type}" arg2="Multi-stack"/>
+		</and>
+		<then>
+			<property name="server.type.list" value="primary,secondary"/>
+		</then>
+		<else>
+                        <property name="server.type.list" value="primary"/>
+		</else>
+	</if>	
+
+	<foreach list="${server.type.list}" param="server.op.type" target="do-entry-in-/etc/hosts" inheritAll="true" />
+
+</target>
+
+<target name="do-entry-in-/etc/hosts">
+
+         	       <loadfile property="${server.op.type}-hosts" srcFile="${installer.config.dir}/${server.op.type}-etc-hosts">
+	        	       <filterchain>
+	        	       		<ignoreblank/>
+		                </filterchain>
+                	</loadfile>
+                        <propertycopy name="server.op.type-hosts" from="${server.op.type}-hosts" override="true"/>
+		        <if>
+                	       	<not>
+                        		<equals arg1="${server.op.type-hosts}" arg2=""/>
+		               	</not>
+                	       	<then>
+                	       		<echo file="${installer.config.dir}/${server.op.type}-etc-hosts.temp" message="${server.op.type-hosts}"/>
+
+					<replaceregexp file="${installer.config.dir}/${server.op.type}-etc-hosts.temp" byline="true"
+		                            match="^(.*)\s\s(.*)$" replace="\1"/>
+
+					<loadfile property="sort.ip" srcFile="${installer.config.dir}/${server.op.type}-etc-hosts.temp">
+					        <filterchain>
+				                        <ignoreblank/>
+		                                        <uniqfilter/>
+                                                        <sortfilter/>		                                        
+                                                        <tokenfilter>
+                                                           <filetokenizer/>
+                                                           <replaceregex pattern="\n"
+                                	                      flags="gi"
+                                                              replace=", "/>
+                                                        </tokenfilter>
+                                                </filterchain>
+                                        </loadfile>		                                                
+				        
+			                <propertyregex property="ip.list" input="${sort.ip}"
+				               	regexp="^(.*), $" select="\1" casesensitive="false" override="true" />
+					<echo message="${line.separator}${line.separator}Please do below hosts entry in /etc/hosts of server(s) ${ip.list}"/>
+					<echo message="------------------------------------------------------------------"/>
+					<echo message="${server.op.type-hosts}"/>
+					<delete file="${installer.config.dir}/${server.op.type}-etc-hosts.temp"/>
+
+		                </then>
+                	</if>
+
+</target>
+
+</project>
