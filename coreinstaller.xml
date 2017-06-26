@@ -1,0 +1,1839 @@
+<?xml version="1.0"?>
+<project name="coreinstaller" default="all" basedir="." 
+xmlns:ora="antlib:net.sf.incanto">
+
+	<!-- ******************************** --> 
+	<!--    Property declaration section  -->
+	<!-- ******************************** -->
+		
+	<!-- ******************************** -->
+	<!-- Property declaration section ends -->
+	<!-- ******************************** -->
+
+	<!-- ******************************** --> 
+	<!--    Import declaration section    -->
+	<!-- ******************************** -->
+
+		<import file="${basedir}/coreutils.xml"/>
+		<import file="${basedir}/remoteops.xml"/>
+		
+		
+	<!-- ********************************* --> 
+	<!--    Import declaration section ends-->
+	<!-- ********************************* -->
+
+	
+	<!-- ******************************** -->
+	<!--    Path declaration section      -->
+	<!-- ******************************** -->
+
+	<!-- ******************************** -->
+	<!--    Path declaration section ends -->
+	<!-- ******************************** -->
+	
+	<!-- ******************************** -->
+	<!--  Taskdef declaration section     -->
+	<!-- ******************************** -->
+		<taskdef resource="net/sf/antcontrib/antcontrib.properties" classpath="ant-contrib-0.6.jar"/>
+		<taskdef classpath="orangevolt-ant-tasks-1.3.2.jar" resource="com/orangevolt/tools/ant/taskdefs.properties"/>				
+				
+	<!-- ******************************** -->
+	<!-- Taskdef declaration section ends -->
+	<!-- ******************************** -->
+ 
+	<!-- ******************************** -->
+	<!-- Macrodef declaration section     -->
+	<!-- ******************************** -->
+	
+	<!-- ******************************** -->
+	<!-- Macrodef declaration section ends-->
+	<!-- ******************************** -->
+
+	<!-- ******************************** -->
+	<!-- Unit target definition	      -->
+	<!-- ******************************** -->
+	
+	<!-- ******************************** -->
+	<!-- Unit target definition ends      -->
+	<!-- ******************************** -->
+
+		
+	<target name="server-type-operation">
+		<ant antfile="${operation.server.type}-ops.xml" dir="${installer.config.dir}/${operation.server.type}" target="operation" inheritAll="true">
+		</ant>
+	</target>
+
+	<target name="multiple-server-operation">
+	
+		<echo message="${line.separator}Getting server(s) status. Please wait..."/>
+		
+		<property file="${installer.config.dir}/installation.conf"/>
+		
+		<foreach list="${client.server.types}" param="operation.server.type" target="server-type-operation" >
+			<param name="serverlist" value="${serverlist}"/>
+			<param name="server.ops" value="${server.ops}"/>
+			<param name="component.name" value="${component.name}"/>
+                </foreach>
+	</target>
+
+
+	<target name="module-server-type-operation">
+
+		<propertycopy name="serverlist" from="${server.type}.server.list"/>
+		<for list="${serverlist}" param="server.name">
+			<sequential>
+				<echo message="${server.type}:@{server.name}${line.separator}" append="true" file="serverlist.tmp"/>
+			</sequential>
+		</for>
+
+	</target>
+
+	<target name="module-server-operation">
+		<if>
+		 	<available file="${installer.config.dir}/${module.file.name}.conf" />
+		<then> 	
+			<property file="${installer.config.dir}/${module.file.name}.conf" />
+			<foreach list="${module.support.server.types}" param="server.type" target="module-server-type-operation" inheritall="true"> 
+			</foreach>
+	        </then>
+		<else>
+			<echo message="${line.separator}No such ${module.file.name} is configured" level="error"/>
+			<fail message="No such ${module.file.name} is configured"/>
+		</else>
+		</if>	
+		
+	</target>
+		
+	<target name="component-server-operation">
+		
+		<property file="${installer.config.dir}/components.conf" />
+
+		<if>
+		 	<isset property="component.id"/>
+		<then> 	
+			
+			<echo message="Performing server operation. Please wait..."/>
+			
+			<propertycopy name="cmp.module.list" from="${component.id}.modules" />
+	
+			<delete file="serverlist.tmp"/>
+			
+			<foreach list="${cmp.module.list}" param="module.file.name" target="module-server-operation"> 
+				<param name="server.ops" value="${server.ops}"/>
+			</foreach>
+			
+			<if>
+				<available file="serverlist.tmp"/>
+			<then>
+				<loadfile property="serverlist.tmp" srcFile="serverlist.tmp">
+					<filterchain>
+						 <sortfilter/>
+						 <uniqfilter/>
+					</filterchain>
+				</loadfile>
+
+				<echo message="${serverlist.tmp}" file="serverlist.tmp"/>			
+	
+			 	<loadfile property="serverlist" srcFile="serverlist.tmp">
+					<filterchain>
+						<tokenfilter>
+						      <filetokenizer/>
+						      <replaceregex pattern="\n"
+						                    flags="gi"
+						                    replace=","/>
+						</tokenfilter>    
+					</filterchain>
+				</loadfile>
+				
+				<antcall target="multiple-server-operation" />		         
+				<delete file="serverlist.tmp"/>
+			</then>
+			</if>
+		</then>
+		<else>
+			<echo message="${line.separator}No component is configured with ${component.name}:${component.id} id" level="error"/>
+			<fail message="No component is configured with ${component.name}:${component.id} id"/>
+		</else>
+		</if>
+						
+	</target>
+
+
+	<target name="add-server-deploylist">
+		
+		<if>
+		 	<available file="${installer.config.dir}/${module.file.name}.conf" />
+		<then> 	
+
+			<propertyregex property="server.type" input="${server.details}"
+				regexp="^(.*):(.*)$" select="\1" casesensitive="false" />
+			
+			<propertyregex property="server.name" input="${server.details}"
+				regexp="^(.*):(.*)$" select="\2" casesensitive="false" />
+		
+			<property file="${installer.config.dir}/${module.file.name}.conf" />
+
+			<if>
+				<not>
+                                        <contains string="${module.support.server.types}" substring="${server.type},"/>
+				</not>
+			<then>
+				<replaceregexp
+                                        file="${installer.config.dir}/${module.file.name}.conf"
+                                        match="module.support.server.types=(.*)"
+                                        replace="module.support.server.types=\1${server.type},"
+                                        byline="true"/>
+
+				<property name="updated.module.support.server.types" value="${module.support.server.types}${server.type}," />
+				<propertycopy name="module.support.server.types" from="updated.module.support.server.types" override="true" />
+				<property name="${server.type}.server.list" value="" />
+			</then>
+			</if>
+			<if>
+				<isset property="primary.${server.type}.server.list"/>
+			<then>
+				<propertycopy name="old.primary.server.list" from="primary.${server.type}.server.list"/>
+			</then>
+				<else>
+					<property name="old.primary.server.list" value=""/>
+				</else>
+			</if>
+			
+			<if>
+				<isset property="secondary.${server.type}.server.list"/>
+			<then>
+				<propertycopy name="old.secondary.server.list" from="secondary.${server.type}.server.list"/>
+			</then>
+				<else>
+					<property name="old.secondary.server.list" value=""/>
+				</else>
+			</if>
+			<property file="${installer.config.dir}/${module.file.name}.conf" />
+			<echo message="${line.separator}Adding Server '${server.name}' to deploy list of '${module.file.name}'"/>
+			<if>
+				<and>
+					<available file="${installer.config.dir}/${server.type}/${server.name}.properties" />
+					<contains string="${module.support.server.types}" substring="${server.type}"/>
+				</and>
+			<then>
+
+				<property file="${installer.config.dir}/${server.type}/${server.name}.properties"/>
+			<if>
+				<equals arg1="${server.operation.type}" arg2="primary" />
+			<then>
+				<propertyfile file="${installer.config.dir}/${module.file.name}.conf">
+				<entry  key="primary.${server.type}.server.list" value="${old.primary.server.list}${server.name},"/>
+				</propertyfile>
+			</then>
+			
+			<elseif>
+				<equals arg1="${server.operation.type}" arg2="secondary" />
+			<then>
+				<propertyfile file="${installer.config.dir}/${module.file.name}.conf">
+				<entry  key="secondary.${server.type}.server.list" value="${old.secondary.server.list}${server.name},"/>
+				</propertyfile>
+			</then>
+			</elseif>
+			
+			</if>
+			</then>
+				<else>
+					<if>
+						<not>
+							<available file="${installer.config.dir}/${server.type}/${server.name}.properties" />
+						</not>
+					<then>	
+						<fail message="Server '${server.name}' is not configured"/>			
+					</then>
+					</if>
+					<echo message="${line.separator}Server type '${server.type}' is not supported by module '${module.name}'"/>
+				</else>
+			</if>	
+				
+	        </then>
+		<else>
+			<echo message="${line.separator}No such ${module.file.name} is configured" level="error"/>
+			<fail message="No such ${module.file.name} is configured"/>
+		</else>
+		</if>
+
+	</target>
+
+	<target name="module-add-server-deploylist">
+
+		<if>
+		 	<available file="${installer.config.dir}/${module.file.name}.conf"/>
+		<then> 	
+			<foreach list="${serverlist}" param="server.details" target="add-server-deploylist"> 
+				<param name="module.file.name" value="${module.file.name}"/>
+			</foreach>
+		
+	        </then>
+		<else>
+			<echo message="${line.separator}No such ${module.file.name} is configured" level="error"/>
+			<fail message="No such ${module.file.name} is configured"/>
+		</else>
+		</if>	
+		
+	</target>
+
+	<target name="component-add-server-deploylist">
+		<echo message="${line.separator}Adding ${serverlist} to deploy list of ${component.name}"/>
+		
+		<property file="${installer.config.dir}/components.conf" />
+
+		<if>
+		 	<isset property="component.id"/>
+		<then> 	
+			<propertycopy name="cmp.module.list" from="${component.id}.modules" />
+	
+			<foreach list="${cmp.module.list}" param="module.file.name" target="module-add-server-deploylist"> 
+				<param name="serverlist" value="${serverlist}"/>
+			</foreach>
+		<!--	<antcall target="deploy-component-on-selected-servers" inheritAll="true">
+			</antcall>			-->
+		</then>
+		<else>
+			<echo message="${line.separator}No component is configured with ${component.name}:${component.id} id" level="error"/>
+			<fail message="No component is configured with ${component.name}:${component.id} id"/>
+		</else>
+		</if>	
+	</target>
+
+	<target name="delete-server-deploylist">
+		<if>
+		 	<available file="${installer.config.dir}/${module.file.name}.conf"/>
+		<then> 	
+			<propertyregex property="server.type" input="${server.details}"
+				regexp="^(.*):(.*)$" select="\1" casesensitive="false" />
+			<propertyregex property="server.name" input="${server.details}"
+				regexp="^(.*):(.*)$" select="\2" casesensitive="false" />
+				
+			<echo message="${line.separator}Deleting server '${server.name}' from deploy list of '${module.file.name}'"/>
+
+			<replaceregexp file="${installer.config.dir}/${module.file.name}.conf"
+			               match="${server.type}.server.list=(.*)${server.name},(.*)$"
+			               replace="${server.type}.server.list=\1\2"
+			               byline="true"
+			/>
+
+			<replaceregexp file="${installer.config.dir}/serverlinks.conf"
+				       match="^*${component.id}.server.links=${server.type}:${server.name}#.*$" 	
+			               replace=""
+			               byline="true"
+			/>
+	        </then>
+		<else>
+			<echo message="${line.separator}No such ${module.file.name} is configured" level="error"/>
+			<fail message="No such ${module.file.name} is configured"/>
+		</else>
+		</if>	
+	</target>
+
+
+	<target name="module-delete-server-deploylist">
+		<if>
+		 	<available file="${installer.config.dir}/${module.file.name}.conf"/>
+		<then> 	
+			<foreach list="${serverlist}" param="server.details" target="delete-server-deploylist"> 
+				<param name="module.file.name" value="${module.file.name}"/>
+			</foreach>
+	        </then>
+		<else>
+			<echo message="${line.separator}No such ${module.file.name} is configured" level="error"/>
+			<fail message="No such ${module.file.name} is configured"/>
+		</else>
+		</if>	
+		
+	</target>
+
+	<target name="component-delete-server-deploylist">
+		<echo message="${line.separator}Delete ${serverlist} from deploy list of ${component.name}"/>
+		
+		<property file="${installer.config.dir}/components.conf" />
+
+		<if>
+		 	<isset property="component.id"/>
+		<then> 	
+			<propertycopy name="cmp.module.list" from="${component.id}.modules" />
+	
+			<foreach list="${cmp.module.list}" param="module.file.name" target="module-delete-server-deploylist"> 
+				<param name="serverlist" value="${serverlist}"/>
+			</foreach>
+		</then>
+		<else>
+			<echo message="${line.separator}No component is configured with ${component.name}:${component.id} id" level="error"/>
+			<fail message="No component is configured with ${component.name}:${component.id} id"/>
+		</else>
+		</if>	
+		
+	</target>
+	
+	<target name="change-deployment-env-after-server-re-configure-list">
+
+		<foreach list="${server.links}" param="server.link"  target="change-deployment-env-after-server-re-configure" inheritall="false">
+		</foreach>
+	
+	</target>
+		
+	<target name="change-deployment-env-after-server-re-configure">
+		<propertyregex property="component.id" input="${server.link}"
+                      regexp="^(.*)\.(.*)\.(.*)$" select="\1" casesensitive="false" />
+		<propertyregex property="from.server" input="${server.link}"
+                      regexp="^(.*)=(.*)#(.*)$" select="\2" casesensitive="false" />
+		<propertyregex property="to.server" input="${server.link}"
+                      regexp="^(.*):(.*)#(.*)$" select="\3" casesensitive="false" />
+                      
+		<propertyregex property="from.server.type" input="${from.server}"
+			regexp="^(.*):(.*)$" select="\1" casesensitive="false" />
+		
+		<propertyregex property="from.server.name" input="${from.server}"
+			regexp="^(.*):(.*)$" select="\2" casesensitive="false" />
+		
+                <propertyregex property="to.server.type" input="${to.server}"
+                       regexp="^(.*):(.*)$" select="\1" casesensitive="false" />
+
+                <propertyregex property="to.server.name" input="${to.server}"
+                       regexp="^(.*):(.*)$" select="\2" casesensitive="false" />
+                      
+                <echo message="${line.separator}NOTE: Server name ${to.server} is linked with ${from.server}. Need to re-configure deployment properties."/>
+                
+		<property file="${installer.config.dir}/components.conf" />
+
+		<loadfile property="component.name" srcFile="${installer.config.dir}/installation.conf">
+			<filterchain>
+				<linecontainsregexp>
+				  	<regexp pattern="^@${component.id}.*$"/>
+				</linecontainsregexp>
+				<replaceregex  pattern="^@${component.id},(.*)$" replace="\1"/>
+			 </filterchain>
+		</loadfile>
+		
+		<antcall target="change-deployment-env-component" inheritAll="true"/>
+	</target>
+
+	<target name="configure-server">
+		<ant antfile="${server.type}-ops.xml" dir="${installer.config.dir}/${server.type}" target="configure" inheritAll="true">
+		</ant>
+	</target>
+	
+	<target name="re-configure-server">
+		<ant antfile="${server.type}-ops.xml" dir="${installer.config.dir}/${server.type}" target="reconfigure" inheritAll="true">
+		</ant>
+	</target>
+
+	
+	<target name="deploy-database-entities">
+		
+		<trycatch property="error.message" reference="error.object">
+			<try>
+
+			<if>
+				<contains string="${deployable.entity}" substring=".sql" />
+			<then>
+
+				<echo message="${line.separator}${line.separator}Deploying entity: ${deployable.entity}"/>			
+				<input message="${line.separator}Please enter database schema on which above entity will be deployed:" addproperty="db.username" />
+				<input message="${line.separator}Please enter database schema password :" addproperty="db.password" />
+
+			<if>
+				<not>
+		            		<isset property="charging.model" />
+				</not>
+				<then>
+		            		<property name="${charging.model}" value="none"/>
+				</then>
+				<else>
+					<if>
+						<or>
+							<equals arg1="${charging.model}" arg2="prepaid" casesensitive="false" />
+							<equals arg1="${charging.model}" arg2="postpaid" casesensitive="false" />
+							<equals arg1="${charging.model}" arg2="both" casesensitive="false" />
+							<equals arg1="${charging.model}" arg2="none" casesensitive="false" />
+						</or>
+						<then>
+							<property name="${charging.model}" value="${charging.model}"/>
+						</then>
+					<else>
+						<fail message="Charging model must be either prepaid or postpaid or both or none"/>
+					</else>
+					</if>
+				</else>
+			</if>
+			
+			<if>
+				<equals arg1="${dbf.storage.directory}" arg2=""/>
+			<then>
+				<property name="dbf_storage_directory" value="${datafile.path}" />
+			</then>
+			<else>
+				<property name="dbf_storage_directory" value="${dbf.storage.directory}" />
+			</else>
+			</if>
+			<!--
+			<echo message="${payment.db.user}" />
+			<echo message="${payment.db.password}" />
+			<echo message="${db.username}" />
+			<echo message="${db.password}" />
+			<echo message="${db.ip}" />
+			<echo message="${db.port}" />
+			<echo message="${db.sid}" />
+				-->
+			<ora:sqlplus start="${deployable.entity}" 
+					dir="${execution.dir}"
+					logon="${db.username}/${db.password}@//${db.ip}:${db.port}/${db.sid}"	
+					silent="true">
+					<propertyset>
+						<propertyref prefix="database.env"/>    
+						<propertyref prefix="db."/>
+						<propertyref prefix="schema.name" />
+						<propertyref prefix="dbf_storage_directory" />
+						<propertyref prefix="charging.model"/>
+						<propertyref prefix="datafile.path" />
+						<propertyref prefix="src.sid"/>
+						<propertyref prefix="src.db.user"/>
+						<propertyref prefix="src.db.password"/>
+						<propertyref prefix="expose.rnc.att"/>
+						<propertyref prefix="Billing.web.url"/>
+                                                <propertyref prefix="productmanager.web.url"/>
+                                                <propertyref prefix="ratingmanager.web.url"/>
+						<propertyref prefix="bill.export.path"/>
+						<propertyref prefix="file.dispatch.path"/>
+						<propertyref prefix="aggr.statment.export.path"/>
+						<propertyref prefix="file.aggr.dispatch.path"/>
+						<propertyref prefix="bill.group.path"/>
+						<propertyref prefix="multitenancy.support"/>
+						<propertyref regex=".db."/>
+					</propertyset>
+			</ora:sqlplus>
+			</then>
+			<else>
+				<echo message="${line.separator}Given Deployable entity ${deployable.entity} is not a sql file " />
+			</else>
+			</if>
+				<echo message="${line.separator}Entity ${deployable.entity} executed successfully on schema : ${db.username}"/>
+			</try>
+			<catch>
+				<echo message="${line.separator}ERROR: Can not deploy ${deployable.entity} of  the ${db.username}" level="error"/>
+				<throw message="Can not deploy ${deployable.entity} of the ${username}" refid="error.object"/>
+			</catch>
+			
+		</trycatch>	
+		
+	</target>
+	<target name="deploy-module-database">
+		
+		<echo message="In deploy-module-database" level="info" />
+		<foreach list="${db.deployable.entities}" param="deployable.entity" target="deploy-database-entities" inheritall="true">
+		</foreach>
+		
+	</target>
+
+	<target name="apply-profile">
+		
+			<echo message="apply-profile" level="info" />
+			<input message="Please enter SQL file name of the profile(e.g. general.sql) :" addproperty="db.deployable.entities" />
+			<input message="Please enter database machine ip address :" addproperty="db.ip" />
+			<input message="Please enter database listener port:" addproperty="db.port" />
+			<input message="Please enter database SID :" addproperty="db.sid" />
+
+			<tstamp>
+				<format property="log.timestamp" pattern="yyyy_MM_dd_HHmmss" />
+			</tstamp>
+		
+			<record name="${env.DELIVERABLES_HOME}/_profile_install_${log.timestamp}.log" action="start"/>
+			
+			<antcall target="deploy-module-database" >
+				<param name="execution.dir" value="${env.DELIVERABLES_HOME}"/>
+				<param name="db.deployable.entities" value="${db.deployable.entities}"/>
+			</antcall>
+			
+			<record name="${env.DELIVERABLES_HOME}/_profile_install_${log.timestamp}.log" action="stop"/>
+	</target>
+
+	<target name="deploy-module-server-type">
+	
+		<echo message="In deploy-module-${server.type}" level="info" />
+
+		<if>
+			<and>
+				<isset property="server.operation.type"/>
+				<not>
+					<equals arg1="server.operation.type" arg2="${server.operation.type}"/>
+				</not>
+			</and>
+			<then>
+                                <propertycopy name="deploy.server.list" from="${server.operation.type}.${server.type}.server.list"/>
+			</then>
+			<else>
+				<propertycopy name="deploy.server.list" from="${server.type}.server.list"/>
+			</else>
+		</if>
+		
+		<if>
+			<and>
+				<isset property="deploy.server.list"/>
+				<not>
+					<equals arg1="${deploy.server.list}" arg2=""/>
+				</not>
+				<available file="${module.home}/utilities/deployment/deploy.properties" />
+			</and>
+		<then>		
+			<property file="${module.home}/utilities/deployment/deploy.properties"	/>
+			
+			<ant antfile="${server.type}-ops.xml" dir="${installer.config.dir}/${server.type}" target="deploy" inheritAll="true">
+			</ant>
+		</then>
+		</if>		
+	</target>
+
+	<target name="deploy-on-selected-server-module-server-type">
+	
+		<echo message="In deploy-module-${module.support.server.type}" level="info" />
+		
+		<if>
+			<and>
+				<isset property="deploy.server.list"/>
+				<not>
+					<equals arg1="${deploy.server.list}" arg2=""/>
+				</not>
+				<available file="${module.home}/utilities/deployment/deploy.properties" />
+			</and>
+		<then>		
+			<property file="${module.home}/utilities/deployment/deploy.properties"	/>
+			
+			<ant antfile="${module.support.server.type}-ops.xml" dir="${installer.config.dir}/${module.support.server.type}" target="deploy" inheritAll="true">
+				<property name="module.name" value="${module.name}" />
+			</ant>
+		</then>
+		</if>		
+	</target>
+	
+	<target name="deploy-module">
+	
+		<echo message="In deploy-module" level="info"/>
+		
+		<echo message="Deploying module ${module.file.name}" level="info"/>
+
+		<if>
+		 	<available file="${installer.config.dir}/${module.file.name}.conf"/>
+		<then> 	
+		
+			<property file="${installer.config.dir}/${module.file.name}.conf" />
+
+	                <foreach list="${module.support.server.types}" param="server.type" target="deploy-module-server-type" inheritall="true">
+	                </foreach>	
+	       
+		</then>
+		<else>
+			<echo message="${line.separator}No such ${module.file.name} is configured" level="error"/>
+			<fail message="No such ${module.file.name} is configured"/>
+		</else>
+		</if>       
+	                
+	</target>
+
+	<target name="deploy-module-on-selected-servers">
+	
+		<echo message="In deploy-module" level="info"/>
+		
+		<echo message="Deploying module ${module.file.name}" level="info"/>
+
+		<if>
+		 	<available file="${installer.config.dir}/${module.file.name}.conf"/>
+		<then> 	
+		
+			<property file="${installer.config.dir}/${module.file.name}.conf" />
+
+	                <foreach list="${module.support.server.types}" param="module.support.server.type" target="deploy-on-selected-server-module-server-type" inheritall="true">
+	                </foreach>	
+	       
+		</then>
+		<else>
+			<echo message="${line.separator}No such ${module.file.name} is configured" level="error"/>
+			<fail message="No such ${module.file.name} is configured"/>
+		</else>
+		</if>       
+	</target>
+
+	<target name="deploy">
+
+		<property file="${installer.config.dir}/components.conf" />
+		
+		<echo message="${line.separator}Deploying component ${component.name}. Please wait..." />
+		
+		<propertycopy name="cmp.module.list" from="${component.id}.modules" />
+
+                <foreach list="${cmp.module.list}" param="module.file.name" target="deploy-module" inheritall="true">
+                </foreach>
+	</target>
+
+	<target name="deploy-component-on-selected-servers">
+
+		<property file="${installer.config.dir}/components.conf" />
+
+		<echo message="${line.separator}Deploying component ${component.name}. Please wait..." />
+		
+		<propertycopy name="cmp.module.list" from="${component.id}.modules" />
+
+                <foreach list="${cmp.module.list}" param="module.file.name" target="deploy-module-on-selected-servers" inheritall="true" >
+                	<param name="deploy.server.list" value="${serverlist}" />
+                </foreach>
+	
+	</target>
+	<target name="deploy-datasource">
+		<if>
+                        <equals arg1="${fAppFresh}" arg2="y" casesensitive="false" />
+                        <then>
+				<property name="isdsdeployment" value="true" />
+				<antcall target="deploy-component-on-selected-servers" inheritAll="true" />
+			</then>
+		</if>
+	</target>
+
+	<target name="deploy-selected-module-on-selected-servers">
+		<if>
+                        <isset property="module.list"/>
+                <then>
+	                <property file="${installer.config.dir}/components.conf" />
+
+        	        <echo message="${line.separator}Deploying component ${component.name}. Please wait..." />
+
+             <!--   	<propertycopy name="cmp.module.list" from="${module.list}" /> -->
+
+	                <foreach list="${module.list}" param="module.file.name" target="deploy-module-on-selected-servers" >
+        	                <param name="deploy.server.list" value="${serverlist}" />
+                	</foreach>
+		</then>
+                <else>
+                        <echo message="${line.separator} No module is available to deploy. module.list is not set" level="error"/>
+                        <fail message="No module is available to deploy. module.list is not set"/>
+                </else>
+                </if>
+        </target>
+	
+	
+	<target name="apply-versions">
+
+		<property file="${installer.config.dir}/components.conf" />
+		<propertycopy name="component.home" from="${component.id}.path" />
+		
+		<echo message="${line.separator}Starting installation of ${cmp.name}" />
+		
+		<antcall target="check-env">
+			<param name="variable" value="DELIVERABLES_HOME"/>
+			<param name="failonerror" value="true"/>
+			<param name="fail.message" value="This is the path where deliverables are placed."/>
+		</antcall>
+
+		<trycatch property="error.message" reference="error.object">		
+			<try>
+				<mkdir dir="${env.DELIVERABLES_HOME}/installationdir"/>
+                                <property name="filesname" value="" />
+                                <for list="${file.list}" param="filename">
+                                        <sequential>
+                                                <propertyregex property="MRdetails" input="@{filename}"
+                                                regexp="^(.*).tar.gz$" select="\1" casesensitive="false" override="true" />
+                                                <propertyregex property="MRname" input="${MRdetails}"
+                                                regexp="^(CRESTEL)-(.*)$" select="\2" casesensitive="false" override="true" />
+                                                <property name="token@{filename}" value="${filesname}${MRname}," />
+                                                <propertycopy name="filesname" from="token@{filename}" override="true" />
+                                        </sequential>
+                                </for>
+                                <propertyregex property="filesname" input="${filesname}"
+                                regexp="^(.*),$" select="\1" casesensitive="false" override="true" />
+                                <tstamp>
+                                        <format property="log.timestamp" pattern="yyyy_MM_dd_HHmmss" />
+                                </tstamp>
+
+                                <record name="${env.DELIVERABLES_HOME}/_install_${filesname}-${log.timestamp}.log" action="start"/>
+		
+				<if>
+					<and>
+						<isset property="use.component.install.xml"/>
+						<equals arg1="${use.component.install.xml}" arg2="true"/>
+					</and>
+				<then>
+					<ant antfile="${component.upgrade.build.file}" dir="${component.home}/${component.upgrade.build.dir}" target="install" inheritAll="false">
+	                    <property name="logfilename" value="_install_${filesname}-${log.timestamp}" />
+						<property name="component.home" value="${component.home}"/>
+						<property name="file.path" value="${env.DELIVERABLES_HOME}"/>
+						<property name="file.list" value="${file.list}"/>
+						<property name="installation.dir" value="${env.DELIVERABLES_HOME}/installationdir"/>
+						<property name="reinstall.db.version" value="${reinstall.db.version}"/>
+						<property name="use.oracle.client" value="${use.oracle.client}"/>
+						<property name="cmp.name" value="${cmp.name}"/>
+					</ant>
+				</then>
+				<else>
+					<ant antfile="${component.upgrade.build.file}" dir="${installer.buildscripts.dir}" target="install" inheritAll="false">
+                        <property name="logfilename" value="_install_${filesname}-${log.timestamp}" />
+						<property name="component.home" value="${component.home}"/>
+						<property name="file.path" value="${env.DELIVERABLES_HOME}"/>
+						<property name="file.list" value="${file.list}"/>
+						<property name="installation.dir" value="${env.DELIVERABLES_HOME}/installationdir"/>
+						<property name="reinstall.db.version" value="${reinstall.db.version}"/>
+						<property name="use.oracle.client" value="${use.oracle.client}"/>
+						<property name="cmp.name" value="${cmp.name}"/>
+					</ant>
+				</else>
+				</if>
+                <record name="${env.DELIVERABLES_HOME}/_install_${filesname}-${log.timestamp}.log" action="stop"/>
+			</try>
+			<catch>
+				
+				<echo message="${line.separator}ERROR: Error while applying new version of ${cmp.name}" level="error"/>
+
+				<property name="err.obj" refid="error.object" />
+				<antcall target="send-mail">
+					<param name="mail.subject" value="Apply Version Failed : ${cmp.name}: ${file.list}"/>
+					<param name="mail.message" value="Apply Version Failed : ${cmp.name}: ${file.list}. ${line.separator}Root cause:${error.message}, Error Object=${err.obj}"/>
+				</antcall>
+				
+				<throw message="Error while applying new version of ${cmp.name} : Root cause, ${error.message}" refid="error.object"/>
+			</catch>
+		</trycatch>		
+		
+	</target>
+
+	<target name="upgrade-app-versions">
+
+		<property file="${installer.config.dir}/components.conf" />
+		<propertycopy name="component.home" from="${component.id}.path" />
+
+		<echo message="${line.separator}Starting Upgradation of ${cmp.name}" />
+
+		<antcall target="check-env">
+				<param name="variable" value="DELIVERABLES_HOME"/>
+				<param name="failonerror" value="true"/>
+				<param name="fail.message" value="This is the path where deliverables are placed."/>
+		</antcall>
+
+		<trycatch property="error.message" reference="error.object">
+			<try>
+				<mkdir dir="${env.DELIVERABLES_HOME}/installationdir"/>
+				<basename property="file.base.name" file="${file.name}" suffix=".tar.gz"/>
+				<gunzip src="${env.DELIVERABLES_HOME}/${file.base.name}.tar.gz" dest="${env.DELIVERABLES_HOME}/installationdir" />
+				<untar src="${env.DELIVERABLES_HOME}/installationdir/${file.base.name}.tar" dest="${env.DELIVERABLES_HOME}/installationdir"/>
+				<delete file="${env.DELIVERABLES_HOME}/installationdir/${file.base.name}.tar"/>
+				<property file="${env.DELIVERABLES_HOME}/installationdir/installation.info" />
+		                <property name="installation.dir" value="${env.DELIVERABLES_HOME}/installationdir"/>
+		                
+				<antcall target="delete-modules" inheritAll="true"/>
+				<foreach list="${module.list}" param="module.name" target="upgrade-module-versions" inheritall="true" />
+				
+				<ant antfile="install.xml" dir="${installer.buildscripts.dir}" target="do-version-entries" inheritAll="true">
+				</ant>
+				
+				<mkdir dir="${env.DELIVERABLES_HOME}/successbuilds"/>
+				<echo message="Moving file ${file.name} to path ${env.DELIVERABLES_HOME}/successbuilds" />
+				<move file="${env.DELIVERABLES_HOME}/${file.name}" todir="${env.DELIVERABLES_HOME}/successbuilds"/>
+				<delete dir="${env.DELIVERABLES_HOME}/installationdir"/>
+			</try>
+			<catch>
+				<mkdir dir="${env.DELIVERABLES_HOME}/failbuilds"/>
+				<echo message="Moving file ${file.name} to path ${env.DELIVERABLES_HOME}/failbuilds" />
+				<move file="${env.DELIVERABLES_HOME}/${file.name}" todir="${env.DELIVERABLES_HOME}/failbuilds"/>
+				<delete dir="${env.DELIVERABLES_HOME}/installationdir"/>
+				<echo message="${line.separator}ERROR: Error while applying new version of ${cmp.name}" level="error"/>
+
+				<property name="err.obj" refid="error.object" />
+				<antcall target="send-mail">
+					<param name="mail.subject" value="Apply Version Failed : ${cmp.name}: ${file.list}"/>
+					<param name="mail.message" value="Apply Version Failed : ${cmp.name}: ${file.list}. ${line.separator}Root cause:${error.message}, Error Object=${err.obj}"/>
+				</antcall>
+
+				<throw message="Error while applying new version of ${cmp.name} : Root cause, ${error.message}" refid="error.object"/>
+			</catch>
+		</trycatch>
+	</target>
+
+	<target name="delete-modules">
+
+        	<echo file="module-delete.info">delete.module.list=</echo>
+        
+	        <propertycopy name="comp.module.list" from="${component.id}.modules"/>
+        
+	        <propertyregex property="old.module.list" input="${comp.module.list}" override="true"
+                	regexp="CMP(.*?)-" replace="" global="true" casesensitive="false" />
+                
+		<foreach list="${old.module.list}" param="old.module.name" target="compare-change-in-module-list" inheritall="true">
+                        <param name="old.module.list" value="${old.module.list}"/>
+                </foreach>
+        
+	        <property file="module-delete.info" />
+	        <if>
+	        	<not>
+	        		<equals arg1="${delete.module.list}" arg2="" />
+	        	</not>
+	        	<then>
+		                <echo message="${delete.module.list} modules are deleted from ${cmp.name}"/>
+		         </then>
+		</if>
+                <delete file="module-delete.info" />
+        
+	        <foreach list="${delete.module.list}" param="module.name" target="configure-deleted-entities-to-installer" inheritall="true"/>
+
+	</target>
+
+	<target name="compare-change-in-module-list">
+                
+		<for list="${module.list}" param="new.module.name">
+                        <sequential>
+ 	                       <if>
+        	                       <equals arg1="@{new.module.name}" arg2="${old.module.name}" />
+                                       <then>
+                		               <echo message="success" file="${old.module.name}_sucess"/>
+                                       </then>
+                               </if>
+                        </sequential>
+                </for>
+
+		<if>
+			<not>
+				<available file="${old.module.name}_sucess" />
+			</not>
+			<then>
+				<echo file="module-delete.info" append="true">${old.module.name},</echo>
+			</then>
+			<else>
+				<delete file="${old.module.name}_sucess" />
+			</else>
+		</if>
+	</target>
+
+	<target name="configure-deleted-entities-to-installer">
+        
+		<property file="${installer.config.dir}/${component.id}-${module.name}.conf"/>
+                <property file="${module.home}/utilities/deployment/deploy.properties" />
+                <for list="primary,secondary" param="server.operation.type" >
+                <sequential>
+        	        <if>
+	        	        <resourcecontains resource="${installer.config.dir}/upgradeconfig/${cmp.name}-@{server.operation.type}-deleted-entities.info" substring="removable.module.list="/>
+        	        <then>
+		                <replaceregexp file="${installer.config.dir}/upgradeconfig/${cmp.name}-@{server.operation.type}-deleted-entities.info"
+			                match="removable.module.list=(.*)"
+			                replace="removable.module.list=\1,${module.name}"
+			                byline="true"
+		                />
+                	</then>
+	                <else>
+        		        <propertyfile file="${installer.config.dir}/upgradeconfig/${cmp.name}-@{server.operation.type}-deleted-entities.info">
+			                <entry key="removable.module.list" value="${module.name}"/>
+		                </propertyfile>
+	                </else>
+        	        </if>
+                	<echo file="${installer.config.dir}/upgradeconfig/${cmp.name}-@{server.operation.type}-deleted-entities.info" append="true">${line.separator}${module.name}.deleted.entities=${deployable.entities}</echo>
+                </sequential>
+                </for>
+
+		<replaceregexp file="${installer.config.dir}/components.conf"
+		       match="^${component.id}.modules=(.*),(${component.id}-${module.name}),(.*)$"
+	               replace="${component.id}.modules=\1,\3"
+        	       byline="true"
+                />
+		<replaceregexp file="${installer.config.dir}/components.conf"
+		       match="^${component.id}.modules=(${component.id}-${module.name}),(.*)$"
+		       replace="${component.id}.modules=\2"
+                       byline="true"
+                />
+		<replaceregexp file="${installer.config.dir}/components.conf"
+		       match="^${component.id}.modules=(.*),(${component.id}-${module.name})$"
+              	       replace="${component.id}.modules=\1,"
+                       byline="true"
+                />
+
+
+        </target>
+
+	<target name="upgrade-module-versions">
+		<if>
+			<available file="${component.home}/modules/${module.name}" type="dir" />
+			<then>
+				<echo message="${line.separator}Upgrading module ${module.name}"/>
+				<property name="backup.dir" value="${env.DELIVERABLES_HOME}/installationdir/tmpwarbackup" />
+				<antcall target="module-config-backup" />
+					<delete dir="${component.home}/modules/${module.name}" />
+					<mkdir dir="${component.home}/modules/${module.name}"/>
+				<copy todir="${component.home}/modules/${module.name}" overwrite="true">
+					<fileset dir="${env.DELIVERABLES_HOME}/installationdir/modules/${module.name}" >
+					</fileset>
+				</copy>
+				<antcall target="change-in-deployable-entities" inheritAll="true"/>
+				<antcall target="module-config-restore" inheritAll="true" />
+				<antcall target="update-installed-version-entry" inheritAll="true"/>	
+			</then>
+			<else>
+				<echo message="${line.separator} Adding new module ${module.name} to ${cmp.name}"/>
+				<copy todir="${component.home}/modules/${module.name}" overwrite="true">
+					<fileset dir="${env.DELIVERABLES_HOME}/installationdir/modules/${module.name}" >
+					</fileset>
+				</copy>
+				<property file="${component.home}/modules/${module.name}/install.info"/>
+
+                                <exec executable="/bin/bash">
+                                        <arg value="${basedir}/../scripts/addmodule.sh" />
+                                        <arg value="${installer.config.dir}"/>
+                                        <arg value="${component.id}" />
+                                        <arg value="${module.name}" />
+                                </exec>
+
+
+                                <propertyfile file="${installer.config.dir}/${component.id}-${module.name}.conf">
+                                        <entry key="module.home" operation="=" value="${component.home}/modules/${module.name}"/>
+                                        <entry key="module.name" operation="=" value="${module.name}"/>
+                                </propertyfile>
+
+
+                                <property file="${installer.config.dir}/installation.conf" />
+
+                                <if>
+                                        <isset property="${component.id}.modules"/>
+                                <then>
+                                        <propertycopy name="comp.module.list" from="${component.id}.modules" override="true" />
+                                </then>
+                                <else>
+                                        <property name="comp.module.list" value=""/>
+                                </else>
+                                </if>
+
+                                <if>
+                                <not>
+                                        <contains string="${comp.module.list}" substring="${module.name}" />
+                                </not>
+                                <then>
+        	                        <replaceregexp
+                	                        file="${installer.config.dir}/components.conf"
+                        		        match="${component.id}.modules=(.*)"
+                                        	replace="${component.id}.modules=\1${component.id}-${module.name},"
+	                                        byline="true"/>
+        	                        <property name="updated.${component.id}.modules" value="${comp.module.list}${component.id}-${module.name}," />
+                	                <propertycopy name="${component.id}.modules" from="updated.${component.id}.modules" override="true" />
+		        	</then>
+	                        </if>
+
+                                <if>
+                                        <available file="${component.home}/modules/${module.name}/utilities/dbdatasources/${datasource.file}"/>
+                                <then>
+                                        <antcall target="configure-module-datasource" inheritAll="false" >
+                                                <param name="component.home" value="${component.home}"/>
+                                                <param name="module.name" value="${module.name}"/>
+                                                <param name="datasource.file" value="${datasource.file}"/>
+                                        </antcall>
+                                </then>
+                                </if>
+
+                                <antcall target="update-installed-version-entry" inheritAll="true"/>
+
+			</else>
+		</if>
+	</target>
+
+	<target name="configure-module-datasource">
+		
+		<echo message="Configuring datasource for module ${module.name}" level="info"/>
+
+		<property file="${component.home}/modules/${module.name}/install.info"/>
+		<property file="${component.home}/upgrade/build.properties"/>
+	
+		<if>
+			<isset property="${module_db_schema}"/>
+		<then>
+			<regexp id="conurl" pattern="(&lt;connection-url&gt;)(.*)(&lt;/connection-url&gt;)"/>
+                	<replaceregexp file="${component.home}/modules/${module.name}/utilities/dbdatasources/${datasource.file}"
+                        	byline="true">
+                        	<regexp refid="conurl"/>
+                        	<substitution expression="\1${database.url}\3"/>
+	                </replaceregexp>
+        	        <regexp id="password" pattern="(&lt;password&gt;)(.*)(&lt;/password&gt;)"/>
+                	<replaceregexp file="${component.home}/modules/${module.name}/utilities/dbdatasources/${datasource.file}"
+                        	byline="true">
+	                        <regexp refid="password"/>
+        	                <substitution expression="\1${module_db_schema}${database.env}\3"/>
+                	</replaceregexp>
+	                <regexp id="schema" pattern="(&lt;schema&gt;)(.*)(&lt;/schema&gt;)"/>
+        	        <replaceregexp file="${component.home}/modules/${module.name}/utilities/dbdatasources/${datasource.file}"
+                	        byline="true">
+                        	<regexp refid="schema"/>
+	                        <substitution expression="\1${module_db_schema}${database.env}\3"/>
+        	        </replaceregexp>
+                	<regexp id="user-name" pattern="(&lt;user-name&gt;)(.*)(&lt;/user-name&gt;)"/>
+	                <replaceregexp file="${component.home}/modules/${module.name}/utilities/dbdatasources/${datasource.file}"
+        	                byline="true">
+                	        <regexp refid="user-name"/>
+                        	<substitution expression="\1${module_db_schema}${database.env}\3"/>
+	                </replaceregexp>
+
+		</then>
+		<else>
+                        <echo message="${line.separator}No DB schema is configured with ${module.name}" level="error"/>
+                        <fail message="No DB schema is configured with ${module.name}"/>
+                </else>
+		</if>
+		
+	</target>
+	
+	<target name="module-config-backup">
+		<mkdir dir="${backup.dir}"/>
+		<copy todir="${backup.dir}" overwrite="true" verbose="true" >
+				<fileset dir="${component.home}/modules/${module.name}" includes="**/dbdatasources/*,**/dbconfig/*,dictionary/**,config/**,utilities/deployment/deploy.properties">
+				</fileset>
+		</copy>
+	</target>
+	<target name="change-in-deployable-entities">
+
+		<echo file="change-deployable.info" >change.deployable=</echo>
+                <property file="${backup.dir}/utilities/deployment/deploy.properties"/>
+                <propertycopy name="old.deployable.entities" from="deployable.entities"/>
+
+                <foreach list="${old.deployable.entities}" param="old.deployable.entity" target="compare-change-in-deployable-entities" inheritall="false">
+                        <param name="component.home" value="${component.home}"/>
+                        <param name="old.deployable.entities" value="${old.deployable.entities}"/>
+                </foreach>
+
+                <property file="change-deployable.info" />
+                
+		<if>
+                	<not>
+                		<equals arg1="${change.deployable}" arg2="" />
+                	</not>
+                	<then>
+                		<for list="primary,secondary" param="server.operation.type" >
+                	        <sequential>
+	                		<if>
+		                		<resourcecontains resource="${installer.config.dir}/upgradeconfig/${cmp.name}-@{server.operation.type}-deleted-entities.info" substring="removable.module.list="/>
+        		        		<then>
+                					<replaceregexp file="${installer.config.dir}/upgradeconfig/${cmp.name}-@{server.operation.type}-deleted-entities.info"
+		                				match="removable.module.list=(.*)"
+                						replace="removable.module.list=\1,${module.name}"
+		                				byline="true"
+        		        			/>
+	                			</then>
+        	        			<else>
+	                				<propertyfile file="${installer.config.dir}/upgradeconfig/${cmp.name}-@{server.operation.type}-deleted-entities.info">
+				                		<entry key="removable.module.list" value="${module.name}"/>
+                					</propertyfile>
+	                			</else>
+	                		</if>
+			                <echo file="${installer.config.dir}/upgradeconfig/${cmp.name}-@{server.operation.type}-deleted-entities.info" append="true">${line.separator}${module.name}.deleted.entities=${change.deployable}</echo>
+				</sequential>
+				</for>
+                	</then>
+                </if>
+
+<!--		<foreach list="${change.deployable}" param="delete.entity" target="deploy-module" inheritall="true">
+                        <param name="module.file.name" value="${component.id}-${module.name}"/>
+                        <param name="isdeleteentity" value="true"/>
+		</foreach> -->
+
+                <delete file="change-deployable.info" />
+
+	</target>
+	<target name="compare-change-in-deployable-entities">
+                <property file="${component.home}/modules/${module.name}/utilities/deployment/deploy.properties"/>
+                <for list="${deployable.entities}" param="new.deployable.entity">
+                        <sequential>
+                                <if>
+                                        <equals arg1="@{new.deployable.entity}" arg2="${old.deployable.entity}" />
+                                        <then>
+                                                <echo message="success" file="${old.deployable.entity}_sucess"/>
+                                        </then>
+                                </if>
+                        </sequential>
+                </for>
+                <if>
+                        <not>
+                                <available file="${old.deployable.entity}_sucess" />
+                        </not>
+                        <then>
+                                <echo file="change-deployable.info" append="true">${old.deployable.entity},</echo>
+                        </then>
+                        <else>
+                                <delete file="${old.deployable.entity}_sucess" />
+                        </else>
+                </if>
+	</target>
+	<target name="update-installed-version-entry">
+
+<echo message="in update-installed-version-entry========${module.name}=====${cmp.name}-${module.name}"/>
+
+  	      <ant antfile="install-module.xml" dir="${component.home}/modules/${module.name}/utilities/installationscripts/install" target="update-installed-version" inheritAll="false">
+			<property name="component.name" value="${cmp.name}-${module.name}" />
+	               <property file="${installation.dir}/version.info"/>
+         	     <property file="${component.home}/upgrade/build.properties"/>
+              </ant>
+	</target>
+	
+	<target name="module-config-restore">
+		<if>
+		<and>
+			<isset property="backup.dir"/>
+			<available file="${backup.dir}" type="dir" />
+		</and>
+		<then>
+			<echo message="Restoring configuration" />
+			<copy todir="${component.home}/modules/${module.name}" overwrite="true">
+								<fileset dir="${backup.dir}" includes="**/dbdatasources/*,**/dbconfig/*,dictionary/**,config/**">
+								</fileset>
+						</copy>
+			<delete dir="${backup.dir}" />
+		</then>
+		</if>
+	</target>
+
+	<target name="apply-db-versions">
+
+		<property file="${installer.config.dir}/components.conf" />
+		<propertycopy name="component.home" from="${component.id}.path" />
+		
+		<echo message="${line.separator}Starting database installation of ${cmp.name}" />
+		
+		<antcall target="check-env">
+			<param name="variable" value="DELIVERABLES_HOME"/>
+			<param name="failonerror" value="true"/>
+			<param name="fail.message" value="This is the path where deliverables are placed."/>
+		</antcall>
+				
+		<mkdir dir="${env.DELIVERABLES_HOME}/installationdir"/>
+
+		<trycatch property="error.message" reference="error.object">		
+			<try>
+				<property name="filesname" value="" />
+		                <for list="${file.list}" param="filename">
+                		        <sequential>
+                                		<propertyregex property="MRdetails" input="@{filename}"
+		                                regexp="^(.*).tar.gz$" select="\1" casesensitive="false" override="true" />
+                		                <propertyregex property="MRname" input="${MRdetails}"
+                                		regexp="^(CRESTEL)-(.*)$" select="\2" casesensitive="false" override="true" />
+		                                <property name="token@{filename}" value="${filesname}${MRname}," />
+                		                <propertycopy name="filesname" from="token@{filename}" override="true" />
+		                        </sequential>
+                		</for>
+		                <propertyregex property="filesname" input="${filesname}"
+                                regexp="^(.*),$" select="\1" casesensitive="false" override="true" />
+				<tstamp>
+					<format property="log.timestamp" pattern="yyyy_MM_dd_HHmmss" />
+				</tstamp>
+			
+				<record name="${env.DELIVERABLES_HOME}/_db_${filesname}-${log.timestamp}.log" action="start"/>
+				<if>
+					<and>
+						<isset property="use.component.install.xml"/>
+						<equals arg1="${use.component.install.xml}" arg2="true"/>
+					</and>
+				<then>
+					<ant antfile="${component.upgrade.build.file}" dir="${component.home}/${component.upgrade.build.dir}" target="install-db" inheritAll="false">
+						<property name="logfilename" value="_db_${filesname}-${log.timestamp}" />
+						<property name="component.home" value="${component.home}"/>
+						<property name="file.path" value="${env.DELIVERABLES_HOME}"/>
+						<property name="file.list" value="${file.list}"/>
+						<property name="installation.dir" value="${env.DELIVERABLES_HOME}/installationdir"/>
+						<property name="reinstall.db.version" value="${reinstall.db.version}"/>
+					</ant>
+				</then>
+				<else>
+					<ant antfile="${component.upgrade.build.file}" dir="${installer.buildscripts.dir}" target="install-db" inheritAll="false">
+						<property name="logfilename" value="_db_${filesname}-${log.timestamp}" />
+						<property name="component.home" value="${component.home}"/>
+						<property name="file.path" value="${env.DELIVERABLES_HOME}"/>
+						<property name="file.list" value="${file.list}"/>
+						<property name="installation.dir" value="${env.DELIVERABLES_HOME}/installationdir"/>
+						<property name="reinstall.db.version" value="${reinstall.db.version}"/>
+					</ant>
+				</else>
+				</if>
+				<record name="${env.DELIVERABLES_HOME}/_db_${filesname}-${log.timestamp}.log" action="stop"/>
+				<if>
+					<and>
+						<isset property="mailsend.flag" />
+						<equals arg1="${mailsend.flag}" arg2="true"/>
+					</and>
+					<then>
+						<property file="${installer.config.dir}/installation.conf" />
+						<if>
+							<and>
+								<isset property="client.autoinstall.status.mail.list" />
+								<isset property="notification.mail.host" />
+								<not>
+									<and>
+										<equals arg1="${client.autoinstall.status.mail.list}" arg2=""/>
+										<equals arg1="${notification.mail.host}" arg2=""/>
+									</and>
+								</not>
+							</and>
+							<then>
+				                                <mail from="${env.name}.crestelinstaller@elitecore.com"
+				                                tolist="${client.autoinstall.status.mail.list}"
+                                				mailhost="${notification.mail.host}"
+				                                subject="Installation LOG of ${file.list} on ${env.name}@${crestelinstaller.ip}"
+				                                files="${env.DELIVERABLES_HOME}/_db_${filesname}-${log.timestamp}.log"
+								message="PFA"
+				                                />
+							</then>
+							<else>
+								<echo message="WARNING : client.autoinstall.status.mail.list or notification.mail.host is not set. Not sending mail." />
+							</else>
+						</if>
+					</then>
+				</if>
+				<echo message="${line.separator} Please refer log file _db_${filesname}-${log.timestamp}.log at location ${env.DELIVERABLES_HOME} for detailed logs" />
+			</try>
+			<catch>
+
+				<echo message="${line.separator}ERROR: Error while applying application database version of ${cmp.name}" level="error"/>
+
+				<property name="err.obj" refid="error.object" />
+				
+				<antcall target="send-mail">
+					<param name="mail.subject" value="Apply Application Database Version Failed : ${cmp.name}: ${file.list}"/>
+					<param name="mail.message" value="Apply Application Database Version Failed : ${cmp.name}: ${file.list}. ${line.separator}Root cause:${error.message}, Error Object=${err.obj}"/>
+				</antcall>
+				
+				<throw message="Error while applying application database version version of ${cmp.name} : Root cause, ${error.message}" refid="error.object"/>
+			</catch>
+		</trycatch>		
+	</target>
+
+
+	<target name="get-versioninfo-for-module">
+		<property file="${installer.config.dir}/components.conf"/>
+		<propertycopy name="component.config.file" from="${component.id}.config.file"/>
+		<property file="${installer.config.dir}/${module.file.name}.conf"/>
+		<ant antfile="${component.config.file}" dir="${installer.plugins.dir}" target="display-current-version" inheritAll="true">
+			<property name="component.name" value="${component.name}"/>
+			<property name="versioninfo.output.file" value="${basedir}/versioninfo.temp"/>
+		</ant>
+
+		<echo message="${line.separator}" file="${basedir}/versioninfo.temp" append="true"/>		
+		
+	</target>
+	
+	<target name="get-comp-versioninfo-frm-comp-details">
+
+                <propertyregex property="component.id" input="${component.detail}"
+                       regexp="^(.*):(.*)$" select="\1" casesensitive="false" />
+
+                <propertyregex property="component.name" input="${component.detail}"
+                       regexp="^(.*):(.*)$" select="\2" casesensitive="false" />
+
+		
+		<property file="${installer.config.dir}/components.conf" />
+		
+		<propertycopy name="component.home" from="${component.id}.path"/>
+		<propertycopy name="cmp.module.list" from="${component.id}.modules"/>
+
+		<foreach list="${cmp.module.list}" param="module.file.name" target="get-versioninfo-for-module" inheritall="true">
+		</foreach>
+		
+
+		<if>
+			<available file="${basedir}/versioninfo.temp"/>
+		<then>		
+			<loadfile property="versioninfo" srcFile="${basedir}/versioninfo.temp">
+				<filterchain>
+					<headfilter lines="-1" skip="1"/>
+				</filterchain>
+				<filterchain>
+					<headfilter lines="2"/>
+				</filterchain>
+			</loadfile>
+			
+			<echo message="${line.separator}" file="${basedir}/versioninfo.out" append="true"/>
+			
+			<echo file="${basedir}/versioninfo.out" message="${versioninfo}" append="true"/>
+			
+			<delete file="${basedir}/versioninfo.temp" />
+		</then>	
+		</if>
+	</target>
+	
+	<target name="get-version-info">
+		<echo file="versioninfo.out" message="COMPONENT NAME,CURRENT VERSION NUMBER,HOSTNAME,LAST MODIFIED DATE"/>
+		
+                <foreach list="${component.detail.list}" param="component.detail" target="get-comp-versioninfo-frm-comp-details" >
+                </foreach>
+	</target>	
+
+	<target name="change-deployment-env-deployable-entity-module">
+
+		<propertyregex property="entity.name" input="${deployable.entity}"
+                      regexp="^(.*):(.*):(.*):(.*)$" select="\1" casesensitive="false" />
+
+		<propertyregex property="deployment.name" input="${deployable.entity}"
+                      regexp="^(.*):(.*):(.*):(.*)$" select="\2" casesensitive="false" />
+
+		<propertyregex property="parent.deployment.name" input="${deployable.entity}"
+                      regexp="^(.*):(.*):(.*):(.*)$" select="\3" casesensitive="false" />
+
+		<propertyregex property="deployment.prefix" input="${deployable.entity}"
+                      regexp="^(.*):(.*):(.*):(.*)$" select="\4" casesensitive="false" />
+
+		<antfetch dir="${installer.plugins.dir}"  antfile="${component.config.file}" target="check-deployment-condition" return="deployment.condition"/>
+
+		<if>
+			<and>
+				<isset property="deployment.condition"/>
+				<equals arg1="${deployment.condition}" arg2="true"/>
+			</and>
+		<then>
+			<trycatch property="error.message" reference="error.object">
+				<try>
+		
+					<echo message="Changing deployment properties of ${deployment.name}"/>
+					<copy file="${installer.config.dir}/${to.server.type}/${to.server.name}.properties" tofile="${basedir}/deployment.properties"/>
+					
+					<propertyfile file="${basedir}/deployment.properties">
+						<entry key="to.server.type" value="${to.server.type}"/>
+						<entry key="from.server.type" value="${from.server.type}"/>
+						<entry key="deployment.name" value="${deployment.name}"/>
+						<entry key="deployment.prefix" value="${deployment.prefix}"/>
+						<entry key="property.file.name" value="deployment.properties"/>
+						<entry key="component.config.file" value="${component.config.file}"/>
+					</propertyfile>	
+					
+					<ant dir="${installer.plugins.dir}"  antfile="${component.config.file}" target="change-deployment-env-inputs" inheritAll="true">
+						<property name="property.file" value="${basedir}/deployment.properties"/>
+					</ant>
+					<property file="${installer.config.dir}/${from.server.type}/${from.server.name}.properties"/>
+					
+					<scp file="${installer.plugins.dir}/${component.config.file}"
+						remoteTodir="${username}:${password}@${ip}:${deployment.home}"
+						trust="yes">		
+					</scp>	
+					<scp file="${basedir}/deployment.properties"
+						remoteTodir="${username}:${password}@${ip}:${deployment.home}"
+						trust="yes">		
+					</scp>	
+			
+					<antcall target="remoteops.execute-remote-command">
+						<param name="ip" value="${ip}" />
+						<param name="username" value="${username}" />
+						<param name="password" value="${password}" />
+						<param name="command" value="ant -f ${deployment.home}/${component.config.file} change-deployment-env -propertyfile ${deployment.home}/deployment.properties "/>
+						<param name="failonerror" value="true" />
+					</antcall>
+					<delete file="${basedir}/deployment.properties"/>
+					
+			</try>
+			<catch>
+				<echo message="${line.separator}ERROR: Error while setting deployment environment of '${deployment.name}' of module '${module.name}' of '${component.name}'" level="error"/>
+				<throw message="ERROR: Error while setting deployment environment of '${deployment.name}' of module '${module.name}' of '${component.name}'. ${error.message}" refid="error.object"/>
+			</catch>
+		</trycatch>
+					
+		</then>
+		</if>				
+		
+	</target>
+
+
+	<target name="change-deployment-env-module">
+		
+		<property file="${installer.config.dir}/${module.file.name}.conf" />
+		<if>
+			<available file="${module.home}/utilities/deployment/deploy.properties" />
+		<then>
+			<property file="${module.home}/utilities/deployment/deploy.properties" />							
+		
+			<foreach list="${deployable.entities}" param="deployable.entity" target="change-deployment-env-deployable-entity-module" inheritall="true">
+			</foreach>
+		</then>	
+		</if>	
+	</target>
+
+	<target name="change-deployment-env-component">
+	<if>
+		<equals arg1="${fAppFresh}" arg2="y" casesensitive="false" />
+	<then>
+		<echo message="${line.separator}Setting deployment environment."/>
+		<property file="${installer.config.dir}/components.conf"/>	
+		<propertycopy name="component.config.file" from="${component.id}.config.file"/>
+		<if>
+			<and>
+				<not>
+					<equals arg1="${component.config.file}" arg2=""/>
+				</not>
+				<available file="${installer.plugins.dir}/${component.config.file}"/>
+			</and>	
+		<then>
+			<propertycopy name="cmp.module.list" from="${component.id}.modules" />
+			
+			<foreach list="${cmp.module.list}" param="module.file.name" target="change-deployment-env-module" inheritall="true">
+			</foreach>
+		</then>
+		<else>
+			<echo message="${component.name} plugin file is not available. Skipping deployment environment change"/>
+		</else>
+		</if>	
+	</then>
+	</if>
+	</target>
+	
+	<target name="add-server-comm-flow">
+
+		<propertyregex property="from.server.type" input="${from.server}"
+			regexp="^(.*):(.*)$" select="\1" casesensitive="false" />
+		
+		<propertyregex property="from.server.name" input="${from.server}"
+			regexp="^(.*):(.*)$" select="\2" casesensitive="false" />
+		
+                <propertyregex property="to.server.type" input="${to.server}"
+                       regexp="^(.*):(.*)$" select="\1" casesensitive="false" />
+
+                <propertyregex property="to.server.name" input="${to.server}"
+                       regexp="^(.*):(.*)$" select="\2" casesensitive="false" />
+		
+		<available file="${installer.config.dir}/${from.server.type}/${from.server.name}.properties" property="from.server.present"/>
+		<available file="${installer.config.dir}/${to.server.type}/${to.server.name}.properties" property="to.server.present"/>
+		
+		<property file="${installer.config.dir}/components.conf"/>	
+		<if>
+			<equals arg1="${fAppFresh}" arg2="y" casesensitive="false" />
+		<then>
+		<propertycopy name="component.config.file" from="${component.id}.config.file"/>
+		
+		<if>
+			<not>
+				<equals arg1="${component.config.file}" arg2=""/>
+			</not>
+		<then>
+			<antfetch dir="${installer.plugins.dir}"  antfile="${component.config.file}" target="validate-server-comm-flow" return="is.flow.valid" inheritall="true"/>
+		</then>
+		</if>	
+		</then>
+		</if>
+		<if>
+			<or>
+				<and>
+					<isset property="is.flow.valid"/>
+					<not>
+						<equals arg1="${is.flow.valid}" arg2="true"/>
+					</not>
+				</and>
+				<not>
+					<or>
+					<isset property="from.server.present"/>
+					<isset property="to.server.present"/>
+					</or>
+				</not>
+			</or>
+		<then>
+			<fail message="ERROR: Invalid input. Please enter correct information."/>
+		</then>
+		</if>
+	
+		<antcall target="change-deployment-env-component" inheritAll="true"/>		
+		
+		<loadfile property="server.links" srcFile="${installer.config.dir}/serverlinks.conf">		 	
+			<filterchain>
+				<replaceregex  pattern="^*${component.id}.server.links=${from.server.type}:${from.server.name}#.*$" replace=""/>
+				<ignoreblank/>
+			</filterchain>			
+		</loadfile>
+		<if>
+			<isset property="server.links"/>
+		<then>
+			<echo message="${server.links}" file="${installer.config.dir}/serverlinks.conf"/>
+			<echo message="${component.id}.server.links=${from.server.type}:${from.server.name}#${to.server.type}:${to.server.name}${line.separator}" file="${installer.config.dir}/serverlinks.conf" append="true"/>			
+		</then>
+		<else>
+			<echo message="${component.id}.server.links=${from.server.type}:${from.server.name}#${to.server.type}:${to.server.name}${line.separator}" file="${installer.config.dir}/serverlinks.conf" append="true"/>			
+		</else>
+		</if>
+	</target>
+
+	
+	<target name="take-backup-module">
+		<property file="${installer.config.dir}/${module.file.name}.conf"/>
+		<copy todir="${crestel.backup.home}/temp">
+			<fileset dir="${component.home}">
+			        <include name="**/${module.name}/**/*"/>
+			</fileset>
+		</copy>
+			
+	</target>
+	
+	<target name="take-backup-component">
+
+		<antcall target="check-env">
+			<param name="variable" value="CRESTELBACKUP_HOME"/>
+			<param name="failonerror" value="true"/>
+			<param name="fail.message" value="This is the path where CRESTELBACKUP_HOME is installed."/>
+		</antcall>
+
+		<property name="crestel.backup.home" value="${env.CRESTELBACKUP_HOME}" />
+			
+		<tstamp> 
+			<format property="build.number" pattern="yyyy_MM_dd_HHmmss"/> 
+		</tstamp>
+
+		<mkdir dir="${crestel.backup.home}" />	
+		<mkdir dir="${crestel.backup.home}/temp" />
+		
+		<property file="${installer.config.dir}/components.conf"/>	
+		<propertycopy name="component.home" from="${component.id}.path"/>
+		<propertycopy name="module.file.list" from="${component.id}.modules"/>
+		
+		<if>
+			<available file="${component.home}" type="dir"/>
+		<then>
+			
+			<foreach list="${module.file.list}" param="module.file.name" inheritall="true" target="take-backup-module"/>
+			
+			<copy todir="${crestel.backup.home}/temp">
+				<fileset dir="${component.home}">
+				        <exclude name="**/upgrade/**/*.tar.gz"/>
+					<exclude name="**/upgrade/*.log"/>
+					<exclude name="**/modules/**/*"/>
+				</fileset>
+			</copy>
+			
+			<tar tarfile="${crestel.backup.home}/CRESTEL-${component.name}-${build.number}.tar"  longfile="gnu" >
+				<tarfileset dir="${crestel.backup.home}/temp">
+				</tarfileset>
+			</tar>
+					
+		   	<gzip zipfile="${crestel.backup.home}/CRESTEL-${component.name}-${build.number}.tar.gz" src="${crestel.backup.home}/CRESTEL-${component.name}-${build.number}.tar"/>
+		   	<delete file="${crestel.backup.home}/CRESTEL-${component.name}-${build.number}.tar"/>
+			<delete dir="${crestel.backup.home}/temp"/>		   	
+			
+			<echo message="${line.separator}Backup file: CRESTEL-${component.name}-${build.number}.tar.gz, Path: ${crestel.backup.home}"/>		
+		</then>
+		</if>
+		
+	</target>
+
+	<target name="clean-module-for-restore">
+		<property file="${installer.config.dir}/${module.file.name}.conf"/>
+		<delete dir="${component.home}/modules/${module.name}"/>
+	</target>
+	
+	<target name="restore-backup-component">
+
+		<antcall target="check-env">
+			<param name="variable" value="CRESTELBACKUP_HOME"/>
+			<param name="failonerror" value="true"/>
+			<param name="fail.message" value="This is the path where CRESTELBACKUP_HOME is installed."/>
+		</antcall>
+
+		<property name="crestel.backup.home" value="${env.CRESTELBACKUP_HOME}" />
+
+		<property file="${installer.config.dir}/components.conf"/>	
+		<propertycopy name="component.home" from="${component.id}.path"/>
+
+		<if>
+			<and>
+				<available file="${crestel.backup.home}/${file.name}"/>
+				<available file="${component.home}" type="dir"/>
+			</and>	
+		<then>
+			<basename property="file.base.name" file="${file.name}" suffix=".tar.gz"/>
+	
+			<propertycopy name="module.file.list" from="${component.id}.modules"/>
+			
+			<foreach list="${module.file.list}" param="module.file.name" inheritall="true" target="clean-module-for-restore"/>
+			
+		        <mkdir dir="${component.home}" />
+					
+			<gunzip src="${crestel.backup.home}/${file.base.name}.tar.gz" dest="${crestel.backup.home}" />
+			<untar src="${crestel.backup.home}/${file.base.name}.tar" dest="${component.home}"/>
+			<delete file="${crestel.backup.home}/${file.base.name}.tar"/>
+		</then>
+		<else>
+			<echo message="${line.separator}ERROR:Backup file ${crestel.backup.home}/${file.name} or ${component.home} does not exist" level="error"/>
+			<fail message="ERROR:Backup file ${crestel.backup.home}/${file.name} or ${component.home} does not exist"/>
+		</else>	
+		</if>
+	</target>
+
+	<target name="create-deploy-directory">
+
+		<propertyregex property="server.type" input="${server_detail}" regexp="^(.*):(.*)$" select="\1" casesensitive="false" />
+                <propertyregex property="server.name" input="${server_detail}" regexp="^((.*):(.*))|(.*)$" select="\3\4" casesensitive="false" />
+		<if>
+			<available file="${installer.config.dir}/${server.type}/${server.name}.properties" />
+			<then>
+				<property file="${installer.config.dir}/${server.type}/${server.name}.properties"/>
+				<echo message="Creating Deploy directory...." />
+				<antcall target="remoteops.execute-remote-command">
+					<param name="ip" value="${ip}" />
+					<param name="username" value="${username}" />
+					<param name="password" value="${password}" />
+					<param name="command" value="mkdir ${deployment.home}" />
+					<param name="failonerror" value="false" />
+		                </antcall>
+			</then>
+			<else>
+				<echo message="${line.separator}ERROR:${installer.config.dir}/${server.type}/${server.name}.properties does not exist" level="error"/>
+	                        <fail message="ERROR:${installer.config.dir}/${server.type}/${server.name}.properties does not exist"/>
+			</else>
+		</if>
+        </target>
+	<target name="testing">
+        </target>	
+        <target name="single-jboss-backup">
+		<if>
+                        <available file="${installer.config.dir}/jboss/${server_name}.properties" />
+			<then>
+				<property file="${installer.config.dir}/jboss/${server_name}.properties"/>
+				<echo message="" />
+				<echo message="Please wait while taking backup of server ${server_name}" />
+				<antcall target="remoteops.copy-file-remote-location">
+                                	<param name="ip" value="${ip}" />
+                                        <param name="username" value="${username}" />
+                                        <param name="password" value="${password}" />
+                                        <param name="file" value="${installer.config.dir}/jboss/jboss-backup.xml" />
+                                        <param name="tofile" value="jboss-backup.xml" />
+                                        <param name="remote.location" value="${home}/.." />
+                                        <param name="failonerror" value="true" />
+                                </antcall>
+				<echo message="" />
+				<echo message="Compressing backup..." />
+				<antcall target="remoteops.execute-remote-command">
+                                        <param name="ip" value="${ip}" />
+                                        <param name="username" value="${username}" />
+                                        <param name="password" value="${password}" />
+                                        <param name="command" value="ant -f ${home}/../jboss-backup.xml jboss-backup -Dserver_name=${server_name} -Djboss.home=${home}" />
+	                                <param name="failonerror" value="true" />
+                                </antcall>
+			</then>
+			<else>
+                                <echo message="${line.separator}ERROR:${installer.config.dir}/jboss/${server_name}.properties does not exist" level="error"/>
+                                <fail message="ERROR:${installer.config.dir}/jboss/${server_name}.properties does not exist"/>
+                        </else>
+                </if>
+        </target>
+	<target name="jboss-restore">
+		<input message="Please enter IP of machine where backup file resides :" addproperty="backup.ip"/>
+		<input message="Please enter Username of machine where backup file resides :" addproperty="backup.username"/>
+		<input message="Please enter Password of machine where backup file resides :" addproperty="backup.password"/>
+		<input message="Please enter backup file name with absolute path where is resides(i.e /abc/def/ghi/xyz.tar.gz) :" addproperty="backup.path"/>
+		<input message="Please enter IP of machine where you want to restore backup :" addproperty="restore.ip"/>
+		<input message="Please enter Username of machine where you want to restore backup :" addproperty="restore.username"/>
+		<input message="Please enter Password of machine where you want to restore backup :" addproperty="restore.password"/>
+		<input message="Please enter path where you want restore backup :" addproperty="restore.path"/>
+		<echo message="" />
+		<if>
+			<not>
+				<or>
+					<equals arg1="${backup.ip}" arg2="" casesensitive="false" />
+					<equals arg1="${backup.username}" arg2="" casesensitive="false" />
+					<equals arg1="${backup.password}" arg2="" casesensitive="false" />
+					<equals arg1="${backup.path}" arg2="" casesensitive="false" />
+					<equals arg1="${restore.ip}" arg2="" casesensitive="false" />
+                                        <equals arg1="${restore.username}" arg2="" casesensitive="false" />
+                                        <equals arg1="${restore.password}" arg2="" casesensitive="false" />
+                                        <equals arg1="${restore.path}" arg2="" casesensitive="false" />
+				</or>
+			</not>
+			<then>
+				<trycatch property="error.message" reference="error.object">
+                        		<try>
+						<propertyregex property="server.file.path" input="${backup.path}"
+                                                        regexp="^(.*)/(.*)$" select="\1" casesensitive="false" />
+						<propertyregex property="server.file.name" input="${backup.path}"
+                                                        regexp="^(.*)/(.*)$" select="\2" casesensitive="false" />
+						<echo message="Copying backup file ${server.file.name} to destination..." />
+						<echo message="" />
+						<antcall target="remoteops.copy-file-remote-location">
+		                                        <param name="ip" value="${backup.ip}" />
+                		                        <param name="username" value="${backup.username}" />
+                                		        <param name="password" value="${backup.password}" />
+		                                        <param name="file" value="${installer.config.dir}/jboss/jboss-restore.xml" />
+                		                        <param name="tofile" value="jboss-restore.xml" />
+                                		        <param name="remote.location" value="${server.file.path}" />
+		                                        <param name="failonerror" value="true" />
+                		                </antcall>
+						<antcall target="remoteops.execute-remote-command">
+		                                        <param name="ip" value="${backup.ip}" />
+                		                        <param name="username" value="${backup.username}" />
+                                		        <param name="password" value="${backup.password}" />
+		                                        <param name="command" value="ant -f ${server.file.path}/jboss-restore.xml jboss-restore -Dbackup.path=${backup.path} -Drestore.username=${restore.username} -Drestore.password=${restore.password} -Drestore.ip=${restore.ip} -Drestore.path=${restore.path} -Dserver.file.path=${server.file.path}" />
+                		                        <param name="failonerror" value="true" />
+                                		</antcall>
+						<echo message="" />
+						<echo message="Restoring server to destination..." />
+						<antcall target="remoteops.execute-remote-command">
+                                                	<param name="ip" value="${restore.ip}" />
+	                                                <param name="username" value="${restore.username}" />
+	                                                <param name="password" value="${restore.password}" />
+        	                                        <param name="command" value="tar -xvf ${restore.path}/${server.file.name} -C ${restore.path}"/>
+                	                                <param name="failonerror" value="true" />
+                        	                </antcall>	
+					</try>
+                        		<catch>
+		                                <echo message="${line.separator}ERROR: Error while Restoring jboss " level="error"/>
+				                <property name="err.obj" refid="error.object" />
+                                		<throw message="Error while restoring jboss : Root cause, ${error.message}" refid="error.object"/>
+		                        </catch>
+                		</trycatch>				
+			</then>
+			<else>
+				<for list="backup.ip,backup.username,backup.password,backup.path,restore.ip,restore.username,restore.password,restore.path" param="prop.name">
+ 					 <sequential>
+						<propertycopy name="prop.value" from="@{prop.name}" override="true" />
+						 <if>
+							<equals arg1="${prop.value}" arg2="" casesensitive="false" />
+							<then>
+								<echo message="You have not entered any value for '@{prop.name}' Property. Property '@{prop.name}' was set to null " />
+							</then>
+						</if>
+						
+					</sequential>
+				</for>
+				<echo message="Please enter mentioned value properly and TRY AGAIN..." />
+			</else>
+		</if>
+	</target>
+
+
+       <target name="replace-web-urls">
+
+		<property file="${env.DELIVERABLES_HOME}/crestel-installation.info"/>
+		<propertycopy name="comp.config.dir" from="${component.name}.config.dir"/>
+		<propertycopy name="comp.config.file" from="${component.name}.config.file"/>
+		
+			<if>
+				<or>
+					 <equals arg1="Billing" arg2="${component.name}" casesensitive="false" />
+					 <equals arg1="productmanager" arg2="${component.name}" casesensitive="false" />
+					 <equals arg1="ratingmanager" arg2="${component.name}" casesensitive="false" />
+			       </or>
+		       <then>
+
+			     <property file="${comp.config.dir}/${comp.config.file}"/>
+
+			     <foreach list="${tomcat.servers.list}" param="tomcat.server.name" target="each-server-replace-web-urls" inheritAll="true" />
+			</then>
+			</if>
+	</target>
+
+	<target name="each-server-replace-web-urls">
+			     
+		     <property file="${comp.config.dir}/${tomcat.server.name}.properties"/>
+
+		     <propertyregex property="profile.home" input="${deployment.home}" override="true"
+				    regexp="^(.*)/server/(.*?)/(.*)" select="\1/server/\2" casesensitive="false" />
+                    
+		     <property file="${installer.config.dir}/component.web.entities.name.info"/>
+			<propertycopy name="web.name" from="${component.name}.web.entities.name"/>
+			<propertycopy name="Alias.name" from="${component.name}.Alias.name"/>
+
+		     <antcall target="remoteops.execute-remote-command" inheritAll="true">
+			     <param name="ip" value="${ip}" />
+			     <param name="username" value="${username}" />
+			     <param name="password" value="${password}" />
+			     <param name="failonerror" value="true" />
+			     <param name="command" value="cd ${profile.home}/deploy/jbossweb.sar ; sed  -i -e '/&lt;Host/,/&lt;\/Host&gt;/!b;/&lt;Host/{h;d};H;/&lt;\/Host/!d;x;/&lt;Alias&gt;${Alias.name}&lt;\/Alias&gt;/s/&lt;Host name=&quot;[^&quot;]*&quot;/&lt;Host name=&quot;${web-url}&quot;/g' server.xml ; cd ../deploy.last/${web.name}/WEB-INF ; sed -i 's#&lt;virtual-host&gt;.*&lt;/virtual-host&gt;#&lt;virtual-host&gt;${web-url}&lt;/virtual-host&gt;#' jboss-web.xml "/>
+
+			</antcall>
+     
+      </target>
+
+
+
+
+        <target name="all">
+        
+	</target>        
+</project>
